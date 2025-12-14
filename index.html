@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AudioEZ - V1</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="app-header">
+            <div class="logo-wrapper">
+                <svg viewBox="0 0 50 50" class="app-logo">
+                    <path d="M5,25 C10,15 20,15 25,25 C30,35 40,35 45,25" fill="none" stroke="currentColor"
+                        stroke-width="3" stroke-linecap="round" />
+                    <path d="M5,25 C10,20 15,20 20,25 C25,30 30,30 35,25 C40,20 45,20 45,25" fill="none"
+                        stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+                </svg>
+                <h1 class="app-title">AudioEZ</h1>
+            </div>
+
+            <div class="status-panel">
+                <span id="config-status-label" class="status-label">Config: Default</span>
+                <div id="status-message" class="status-message">Initializing...</div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="main-column">
+ 
+                <div class="controls-group" style="max-height: 75px;">
+                    <div class="dual-selects-wrapper" style="max-height: 75px;">
+                        <div class="select-group">
+                            <label for="headphone-list" class="control-label">Earphone:</label>
+                            <div class="select-wrapper">
+                                <select id="headphone-list"></select>
+                            </div>
+                        </div>
+                        <div class="spacer-20w"></div>
+                        <div class="select-group">
+                            <label for="target-list" class="control-label">Target:</label>
+                            <div class="select-wrapper">
+                                <select id="target-list"></select>
+                            </div>
+                        </div>
+                        <div class="spacer-20w"></div>
+                        <button id="toggle-autoeq" class="btn btn-secondary" style="max-height: 35px; padding-top: 10px;">AutoEQ</button>
+                    </div>
+                </div>
+
+                <div class="spacer-10h"></div>
+
+                <div class="graph-container">
+                    <canvas id="eq-graph"></canvas>
+                </div>
+
+                <div class="spacer-10h"></div>
+
+                <div class="controls-group">
+                    <div class="dual-selects-wrapper" style="max-height: 75px;">
+                        <div class="select-group">
+                            <label for="config-list-select" class="control-label">Configuration:</label>
+                            <div class="select-wrapper">
+                                <select id="config-list-select"></select>
+                            </div>
+                        </div>
+                        <div class="spacer-20w"></div>
+                        <!-- <button id="graphic-parameters-button" class="btn btn-secondary" style="max-height: 35px; min-width: 200px; margin-top: 19px; display: flex; align-items: center; justify-content: center;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12">
+                            </svg>
+                            <span style="margin-left: 5px;">Graphic Parameters</span>
+                        </button> -->
+
+                        <!-- Feature soon -->
+                    </div>
+                    <div class="config-actions">
+                        <div class="controls-buttons-row">
+                            <button id="save-config-button" class="btn btn-primary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                    <polyline points="17 21 17 13 7 13 7 21"/>
+                                    <polyline points="7 3 7 8 15 8"/>
+                                </svg>
+                                <div class="spacer-5w"></div>
+                                <span>Save</span>
+                            </button>
+                        </div>
+                        <div class="controls-buttons-row">
+                            <button id="delete-config-button" class="btn btn-danger">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                                </svg>
+                                <div class="spacer-5w"></div>
+                                <span>Delete</span>
+                            </button>
+                        </div>
+                        <div class="controls-buttons-row">
+                            <button id="import-config-button" class="btn btn-secondary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                <div class="spacer-5w"></div>
+                                <span>Import</span>
+                            </button>
+                        </div>
+                        <div class="controls-buttons-row">
+                            <button id="export-config-button" class="btn btn-secondary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                <div class="spacer-5w"></div>
+                                <span>Export</span>
+                            </button>
+                            </div>
+                        <div class="controls-buttons-row">
+                            <button id="export-all-configs-button" class="btn btn-secondary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 17V3"/>
+                                    <path d="M12 3l7 7m-7-7L5 10"/>
+                                    <path d="M19 19H5a2 2 0 0 1-2-2v-3h18v3a2 2 0 0 1-2 2z"/>
+                                </svg>
+                                <div class="spacer-5w"></div>
+                                <span>Export all</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="spacer-15w"></div>
+
+            <aside class="sidebar">
+
+                <div class="box-controls-group">
+                    <div class="preamp-horizontal-wrapper">
+                        <div class="input-wrapper">
+                            <input type="number" id="point-bands-value" step="1" value="10" min="5" max="31">
+                            <span class="unit">Bands</span>
+                        </div>
+                        
+                        <button id="parameters-btn" class="btn btn-secondary" style="margin-left: 10px;">
+                            <span>Parameters</span>
+                        </button>
+                    </div>
+                </div>
+
+
+                <div class="spacer-10h"></div>
+
+                <div class="controls-group">
+                    <div class="box-controls-group">
+                        <label for="preamp-slider" class="control-label">Pre-amp :</label>
+                        <div class="preamp-horizontal-wrapper">
+                            <input type="range" id="preamp-slider" min="-15" max="15" value="0" step="0.1">
+                            
+                            <div class="input-wrapper">
+                                <input type="number" id="preamp-value" step="0.1" value="0.0">
+                                <span class="unit">dB</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="box-controls-group">
+                        <label for="bass-slider" class="control-label">Bass Boost :</label>
+                        <div class="preamp-horizontal-wrapper">
+                            <input type="range" id="bass-slider" min="-15" max="15" value="0" step="0.1">
+
+                            <div class="input-wrapper">
+                                <input type="number" id="bass-value" step="0.1" value="0.0">
+                                <span class="unit">dB</span>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <div class="box-controls-group">
+                        <label for="treble-slider" class="control-label">Treble Boost :</label>
+                        <div class="preamp-horizontal-wrapper">
+                            <input type="range" id="treble-slider" min="-15" max="15" value="0" step="0.1">
+                            
+                            <div class="input-wrapper">
+                                <input type="number" id="treble-value" step="0.1" value="0.0">
+                                <span class="unit">dB</span>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <div class="spacer-10h"></div>
+
+                <div class="controls-group eq-parameters-group" style="position:relative;">
+                    <p id="eq-message" style="position: absolute; padding-left: 10px; top: 50%; transform: translateY(-50%); margin: 0;">
+                        Select a point on the graph to adjust the settings.
+                    </p>
+                    <div id="point-parameters" class="hide">
+                        <span id="band-index" class="control-label" style="position: absolute; left: 50%; transform: translate(-50%);">Band n°1</span>
+                        <div class="spacer-10h"></div><div class="spacer-10h"></div>
+                        <div class="box-controls-group">
+                            <label for="point-gain-slider" class="control-label">Gain :</label>
+                            <div class="preamp-horizontal-wrapper">
+                                <input type="range" id="point-gain-slider" min="-15" max="15" value="0" step="0.1">
+
+                                <div class="input-wrapper">
+                                    <input type="number" id="point-gain-value" step="0.1" value="0.0">
+                                    <span class="unit">dB</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="box-controls-group">
+                            <label for="point-freq-slider" class="control-label">Frequency :</label>
+                            <div class="preamp-horizontal-wrapper">
+                                <input type="range" id="point-freq-slider" min="20" max="20000" value="1000" step="1">
+
+                                <div class="input-wrapper">
+                                    <input type="number" id="point-freq-value" step="0.1" value="0.0">
+                                    <span class="unit">Hz</span>
+                                </div>
+
+                            </div>
+                        </div>
+                        
+                        <div class="box-controls-group">
+                            <label for="point-q-slider" class="control-label">Quality (Q) :</label>
+                            <div class="preamp-horizontal-wrapper">
+                                <input type="range" id="point-q-slider" min="0.1" max="10" value="1.0" step="0.1">
+
+                                <div class="input-wrapper">
+                                    <input type="number" id="point-q-value" step="0.1" value="0.0">
+                                    <span class="unit">Q</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="box-controls-group">
+                            <label for="type-list-select" class="control-label">Type :</label>
+                            <div class="spacer-10h"></div>
+                            <div class="select-wrapper">
+                                <select id="type-list-select"></select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="spacer-10h"></div>
+
+                <div class="controls-group">
+                    <button id="toggle-button" class="btn btn-primary">Start</button>
+                </div>
+
+                <div class="spacer-10h"></div>
+                
+                <div style="margin:auto;text-align:center;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 4px 10px rgba(0,0,0,0.2);width:200px;font-family:'Segoe UI',sans-serif;color:#e2e8f0;">
+                    <div id="credit-audioez">
+                        <script src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
+                        <script>kofiwidget2.init('Support me on Ko-fi','var(--primary-color)','Z8Z719WZDW');kofiwidget2.draw();</script>
+                    </div>
+                    <div style="font-size:15px;font-weight:600;margin-top:4px;">Made by PainDe0Mie</div>
+                </div>
+                
+                <div id="export-modal" class="modal-export">
+                    <div class="modal-export-content">
+                        <div class="modal-export-header">
+                            <h3 class="modal-export-title">Export a configuration</h3>
+                            <div class="spacer-10h"></div>
+                            <button id="close-export-modal" class="modal-export-close-btn">&times;</button>
+                        </div>
+
+                        <div class="spacer-10h"></div>
+
+                        <div class="modal-export-body">
+                            <div class="modal-export-option">
+                                <label for="profile-name-input" class="modal-export-label">Profile name:</label>
+                                <div class="spacer-10h"></div>
+                                <input type="text" id="profile-name-input" placeholder="Configuration name" class="modal-export-input">
+                            </div>
+
+                            <div class="spacer-10h"></div>
+
+                            <div class="modal-export-option">
+                                <label class="modal-export-label">Export format:</label>
+                                <div class="spacer-10h"></div>
+                                <div class="modal-export-radio-group">
+                                    <label class="modal-export-radio-label">
+                                        <input type="radio" name="export-format" value="parametric" checked>
+                                        <span>Parametric</span>
+                                    </label>
+                                    <div class="spacer-20w"></div>
+                                    <label class="modal-export-radio-label">
+                                        <input type="radio" name="export-format" value="graphic">
+                                        <span>Graphic</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="spacer-10h"></div>
+
+                            <div id="graphic-options" class="modal-export-option">
+                                <label for="bands-select" class="modal-export-label">Number of bands:</label>
+                                <div class="spacer-10h"></div>
+                                <div class="input-wrapper">
+                                    <input type="number" id="export-point-bands-value" step="5" value="10" min="5" max="31">
+                                    <span class="unit">Bands</span>
+                                </div>
+                            </div>
+
+                            <div class="spacer-10h"></div>
+
+                            <div class="modal-export-option">
+                                <label for="platform-select" class="modal-export-label">Destination platform:</label>
+                                <div class="spacer-10h"></div>
+                                <select id="platform-select" class="modal-export-select">
+                                    <option value="audioez">AudioEZ (.aez)</option>
+                                    <option value="equalizerapo">Equalizer APO (.txt)</option>
+                                    <option value="peace">Equalizer APO Peace (.peace)</option>
+                                    <option value="wavelet">Wavelet (.json)</option>
+                                    <option value="wavelet2">Wavelet (.wavelet)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="Warning-message">
+                            <div class="spacer-10h"></div><div class="spacer-10h"></div><div class="spacer-10h"></div>
+                            
+                            <div class="controls-group-warning">
+                                <label class="modal-export-label">⚠ Warning: x</label>
+                            </div>
+                        </div>
+
+                        <div id="Success-message">
+                            <div class="spacer-10h"></div><div class="spacer-10h"></div><div class="spacer-10h"></div>
+                            
+                            <div class="controls-group-success">
+                                <label class="modal-export-label">⚠ Warning: x</label>
+                            </div>
+                        </div>
+
+                        <div class="modal-export-footer">
+                            <button id="generate-export-btn" class="modal-export-btn modal-export-btn-primary">Export</button>
+                            <div class="spacer-20w"></div>
+                            <button id="close-modal-footer-btn" class="modal-export-btn modal-export-btn-secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="delete-modal-overlay" class="modal-confirm">
+                    <div class="modal-confirm-content">
+                        <p id="delete-modal-message" class="modal-confirm-message">Are you sure you want to delete the configuration 'My Config' ?</p>
+                        <div class="spacer-10h"></div>
+                        <div class="modal-confirm-buttons">
+                            <button id="delete-modal-yes" class="btn btn-danger">Yes</button>
+                            <div class="spacer-20w"></div>
+                            <button id="delete-modal-no" class="btn btn-secondary">No</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="parameters-modal" class="modal-overlay">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2>Software Settings</h2>
+                            <button id="close-parameters-modal" class="modal-close-btn">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            
+                            <div class="modal-option-group">
+                                <div class="modal-option">
+                                    <label for="ready-on-startup">Enable EQ on Startup</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="ready-on-startup">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <p class="modal-option-description">Automatically applies the equalization profile when the application is launched.</p>
+                            </div>
+                            
+                            <hr>
+
+                            <div class="modal-option-group">
+                                <div class="modal-option">
+                                    <label for="detect-earphone">Detect Earphones</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="detect-earphone">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <p class="modal-option-description">Automatically detects your connected earphones and applies the corresponding profile (requires in-app configuration).</p>
+                            </div>
+
+                            <hr>
+
+                            <div class="modal-option-group">
+                                <div class="modal-option">
+                                    <label for="persistent-state">Persistent State</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="persistent-state">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <p class="modal-option-description">Saves all settings to cache and reloads the application where you last left off.</p>
+                            </div>
+
+                            <hr>
+
+                            <div class="modal-option-group">
+                                <div class="modal-option">
+                                    <label for="adaptive-filter-state">
+                                        Adaptive Filter 
+                                        <span style="
+                                            display: inline-flex;
+                                            align-items: center;
+                                            justify-content: center;
+                                            background: linear-gradient(135deg, #1d0181, #4902a5);
+                                            color: white;
+                                            font-size: 10px;
+                                            font-weight: bold;
+                                            text-transform: uppercase;
+                                            letter-spacing: 0.5px;
+                                            padding: 2px 6px;
+                                            border-radius: 12px;
+                                            margin-left: 4px;
+                                            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                                            border: 0px solid rgba(255,255,255,0.3);
+                                            position: relative;
+                                            overflow: hidden;
+                                        ">
+                                            <span style="position: relative; z-index: 2;">Experimental</span>
+                                            <span style="
+                                                position: absolute;
+                                                top: 0;
+                                                left: -100%;
+                                                width: 100%;
+                                                height: 100%;
+                                                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+                                                animation: shimmer 2s infinite;
+                                            "></span>
+                                        </span>
+                                    </label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="adaptive-filter-state">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <p class="modal-option-description">
+                                    Automatically detects sound output and applies optimized EQ curves using AI. 
+                                </p>
+                            </div>
+
+                            <hr>
+                            
+                            <div class="modal-option-group">
+                                <div class="modal-option">
+                                    <label for="discord-rpc-checkbox">Discord RPC</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="discord-rpc-checkbox">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <p class="modal-option-description">Displays an "AudioEZ" rich presence on your Discord profile.</p>
+                            </div>
+
+                            <hr>
+
+                            <div class="modal-option-group">
+                                <div class="modal-option">
+                                    <label for="launch-with-windows">Launch with Windows</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="launch-with-windows">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <p class="modal-option-description">Launches the application minimized at your computer's startup.</p>
+                            </div>
+
+                            <hr>
+
+                            <div class="modal-option-group">
+                                <label for="default-headphone-select">Default Earphone</label>
+                                <select id="default-headphone-select" class="custom-select">
+                                </select>
+                            </div>
+
+                            <hr>
+
+                            <div class="modal-option-group">
+                                <label for="default-target-select">Default Target</label>
+                                <select id="default-target-select" class="custom-select">
+                                    </select>
+                            </div>
+
+                            <hr>
+
+                            <div class="modal-option-group">
+                                <label for="default-configuration-select">Default Configuration</label>
+                                <select id="default-configuration-select" class="custom-select">
+                                </select>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="save-parameters-btn" class="btn btn-primary">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script src="scripts.js"></script>
+</body>
+</html>
