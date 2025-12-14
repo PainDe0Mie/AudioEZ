@@ -457,10 +457,12 @@ class AudioEZApp {
                     this.showDeleteConfirmModal(`Configuration '${configName}' already exists. Do you want to overwrite it?`, () => {
                         if (this.py_channel) {
                             this.py_channel.saveConfig(configName);
-                        } else {
-                            statusMessage.textContent = `Saving of configuration '${configName}' cancelled.`;
                         }
                     });
+                } else {
+                    if (this.py_channel) {
+                        this.py_channel.saveConfig(configName);
+                    }
                 }
             }
         };
