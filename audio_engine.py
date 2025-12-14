@@ -1,7 +1,7 @@
 import json, os, sys, csv
 import numpy as np
-from PyQt5.QtCore import QObject
-from PyQt5.QtWidgets import QFileDialog
+from PyQt6.QtCore import QObject
+from PyQt6.QtWidgets import QFileDialog
 
 import config
 

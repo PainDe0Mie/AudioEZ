@@ -1,6 +1,6 @@
 import json, os, sys, time, winreg
 from pypresence import Presence
-from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal, QThread
+from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QThread
 
 import config
 

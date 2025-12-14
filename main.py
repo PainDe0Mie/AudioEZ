@@ -1,16 +1,33 @@
 from multiprocessing import freeze_support
+freeze_support() # For exe build (with pyinstaller)
+
 import json, re, os, sys, difflib
+
+def get_resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+def get_executable_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
 import numpy as np
-import sounddevice as sd 
 from collections import defaultdict
 from pypresence import Presence
-from PyQt5.QtCore import QUrl, QCoreApplication, Qt, QTimer, QLockFile, QDir
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QMessageBox, QDialog, QPushButton, QLabel, QHBoxLayout
-from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
-from PyQt5.QtWebChannel import QWebChannel
-from PyQt5.QtGui import QIcon
+from PyQt6.QtCore import QUrl, QCoreApplication, Qt, QTimer, QLockFile, QDir
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QMessageBox, QDialog, QPushButton, QLabel, QHBoxLayout
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebChannel import QWebChannel
+from PyQt6.QtWebEngineCore import QWebEngineSettings
+from PyQt6.QtGui import QIcon
 from subprocess import Popen
 
+import sounddevice as sd
 import config
 
 def check_single_instance():
@@ -29,7 +46,11 @@ def check_single_instance():
 # Constants
 EAPO_INSTALL_PATH = r"C:\Program Files\EqualizerAPO"
 EAPO_CONFIG_PATH = os.path.join(EAPO_INSTALL_PATH, "config", "config.txt")
-APP_CONFIGS_DIR = "./configs"
+
+exe_dir = get_executable_dir()
+os.chdir(exe_dir)
+config.APP_CONFIGS_DIR = os.path.join(exe_dir, "configs")
+config.initialize_paths()
 
 def load_from_aez_file(filepath: str) -> dict:
     if not os.path.exists(filepath):
@@ -125,7 +146,6 @@ def get_all_autoeq_models(measurements_root="measurements"):
     return models
 
 def list_output_devices():
-    """Liste les périphériques de sortie audio disponibles"""
     devices = sd.query_devices()
     return [dev['name'].lower() for dev in devices if dev['max_output_channels'] > 0]
 
@@ -184,7 +204,7 @@ class InstallAPODialog(QDialog):
         """)
 
 def load_aez_state():
-    data = load_from_aez_file(f"{APP_CONFIGS_DIR}/temp_.aez")
+    data = load_from_aez_file(f"{config.APP_CONFIGS_DIR}/temp_.aez")
 
     if not data:
         print("Aucun fichier de secours valide trouvé ou le chargement a échoué.")
@@ -241,10 +261,14 @@ class AudioEZWindow(QMainWindow):
         self.setGeometry(100, 100, 1150, 900) 
         
         self.webview = QWebEngineView()
-        self.webview.setContextMenuPolicy(Qt.NoContextMenu)
+        self.webview.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(current_dir, 'index.html')
+        #current_dir = os.path.dirname(os.path.abspath(__file__))
+        #html_path = os.path.join(current_dir, 'index.html')
+
+        # Python version
+
+        html_path = get_resource_path('index.html') # For exe build
         
         if not os.path.exists(html_path):
             QMessageBox.critical(self, "Error", f"The HTML file was not found at the location: {html_path}")
@@ -255,11 +279,11 @@ class AudioEZWindow(QMainWindow):
         page = self.webview.page()
         
         settings = page.settings()
-        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
-        settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
-        settings.setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
-        settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
 
         self.audio_engine = AudioEngine()
         
@@ -425,8 +449,8 @@ class AudioEZWindow(QMainWindow):
         """Vérifie l'installation d'Equalizer APO et propose l'installation si nécessaire"""
         if not os.path.exists(EAPO_INSTALL_PATH):
             dialog = InstallAPODialog(self)
-            result = dialog.exec_()
-            if result == QDialog.Accepted:
+            result = dialog.exec()
+            if result == QDialog.DialogCode.Accepted:
                 installer_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "EqualizerAPO64-1.3.exe")
                 if os.path.exists(installer_path):
                     Popen([installer_path])
@@ -458,7 +482,7 @@ class AudioEZWindow(QMainWindow):
             from config_save import save_to_aez_file
 
             save_to_aez_file(
-                filepath=f"{APP_CONFIGS_DIR}/temp_.aez",
+                filepath=f"{config.APP_CONFIGS_DIR}/temp_.aez",
                 eq_parametric=eq_parametric_data,
                 earphone_name=self.py_channel.earphone_name,
                 earphone_curve=[self.py_channel._earphones_curve_freq, self.py_channel._earphones_curve_amp],
@@ -471,8 +495,6 @@ class AudioEZWindow(QMainWindow):
 
 def initialize_config():
     os.makedirs(config.APP_CONFIGS_DIR, exist_ok=True)
-    
-    config.initialize_paths()
     
     if not os.path.exists(config.settings_file):
         with open(config.settings_file, 'w') as f:
@@ -500,7 +522,6 @@ def initialize_discord_rpc():
         return None
 
 def main():
-    """Point d'entrée principal - tout le code exécutable ici"""
     
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
@@ -527,11 +548,14 @@ def main():
     if verif:
         window = AudioEZWindow()
         window.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
     else:
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    freeze_support()
+    import multiprocessing
+    multiprocessing.freeze_support()
+    multiprocessing.set_start_method('spawn', force=True)
+
     main()

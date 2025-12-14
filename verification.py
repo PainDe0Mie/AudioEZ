@@ -1,7 +1,7 @@
 import subprocess, shutil, urllib.request, winreg, os, json, re, time, sys, csv
-from PyQt5.QtWidgets import QProgressBar, QTextEdit, QDialog, QVBoxLayout, QLabel, QPushButton
-from PyQt5.QtCore import pyqtSignal, QThread, Qt
-from PyQt5.QtGui import QFont
+from PyQt6.QtWidgets import QProgressBar, QTextEdit, QDialog, QVBoxLayout, QLabel, QPushButton
+from PyQt6.QtCore import pyqtSignal, QThread, Qt
+from PyQt6.QtGui import QFont
 from pathlib import Path
 from typing import List, Tuple
 
@@ -12,18 +12,23 @@ class VerificationThread(QThread):
     
     def __init__(self):
         super().__init__()
-        self.base_path = Path(__file__).parent
+        if getattr(sys, 'frozen', False):
+            self.base_path = Path(sys.executable).parent
+        else:
+            self.base_path = Path(__file__).parent
+
         self.autoeq_repo = "https://github.com/jaakkopasanen/AutoEq"
         self.audioez_repo = "https://github.com/PainDe0Mie/AudioEZ"
         self.required_libs = [
-            'PyQt5', 'numpy', 'scipy', 'sounddevice', 'pypresence',
-            'requests', 'librosa', 'autoeq'
+            'PyQt6', 'numpy', 'scipy', 'sounddevice', 'pypresence',
+            'requests', 'autoeq'
         ]
         
     def run(self):
         try:
             self.progress_update.emit("Checking required libraries...", 10)
-            missing_libs = self.check_libraries()
+            #missing_libs = self.check_libraries()
+            missing_libs = False # Because compilated with all libs
             if missing_libs:
                 self.progress_update.emit(f"Installing missing libraries: {', '.join(missing_libs)}", 15)
                 if not self.install_libraries(missing_libs):
@@ -523,13 +528,13 @@ class VerificationDialog(QDialog):
         
         # Titre
         title = QLabel("Checking files...")
-        title.setFont(QFont("Arial", 16, QFont.Bold))
-        title.setAlignment(Qt.AlignCenter)
+        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
         # Message de statut
         self.status_label = QLabel("Initializing...")
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
         
@@ -646,5 +651,5 @@ class VerificationDialog(QDialog):
 def run_verification(parent=None) -> bool:
     dialog = VerificationDialog(parent)
     dialog.start_verification()
-    result = dialog.exec_()
-    return result == QDialog.Accepted
+    result = dialog.exec()
+    return result == QDialog.DialogCode.Accepted

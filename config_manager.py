@@ -1,6 +1,6 @@
 import json, re, os, sys
 import numpy as np
-from PyQt5.QtCore import QObject
+from PyQt6.QtCore import QObject
 
 import config
 

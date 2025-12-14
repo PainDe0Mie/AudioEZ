@@ -131,7 +131,6 @@ class AudioEZApp {
             this.setupWebChannel();
             this.watermarkImage.src = 'AudioEZGirl.png';
             this.patchConsoleToPython();
-
         });
     }
 
@@ -247,6 +246,14 @@ class AudioEZApp {
         this.setupParameterEventListeners();
         this.setupAutoEQEventListeners();
         this.setupExportEventListeners();
+
+        document.querySelectorAll('input[type="radio"]').forEach(r => {
+            r.addEventListener('change', () => {
+                r.style.display = 'none';
+                r.offsetHeight; // force reflow
+                r.style.display = '';
+            });
+        });
     }
 
     setupCanvasEventListeners() {
