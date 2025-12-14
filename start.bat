@@ -1,20 +1,19 @@
 @echo off
 title AudioEz - Launcher
+cd /d "%~dp0"
 
-:: Nettoyer l’écran
 cls
-
-:: Logo ASCII
-echo AudioEz
-
-:: Message de démarrage
-echo [AudioEz] Initialisation...
+echo.
+echo [AudioEz] Start as ADMINISTRATOR if this is your fist time starting or you need to update equalizer apo!
+echo.
+echo.
+echo [AudioEz] Starting..
 echo.
 
-:: Lancer le script Python
 python ./main.py
 
-:: Fin
-echo.
-echo [AudioEz] Exécution terminée.
 
+echo.
+echo [AudioEz] Finish.
+
+pause > nul
