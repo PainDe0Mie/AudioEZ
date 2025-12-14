@@ -27,8 +27,8 @@ class VerificationThread(QThread):
     def run(self):
         try:
             self.progress_update.emit("Checking required libraries...", 10)
-            #missing_libs = self.check_libraries()
-            missing_libs = False # Because compilated with all libs
+            missing_libs = self.check_libraries()
+            #missing_libs = False # Because compilated with all libs
             if missing_libs:
                 self.progress_update.emit(f"Installing missing libraries: {', '.join(missing_libs)}", 15)
                 if not self.install_libraries(missing_libs):
