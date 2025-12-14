@@ -1,6 +1,6 @@
 ## 🎧 AudioEZ - 1.0
 
-> AudioEZ is an advanced graphical equalizer designed to optimize your listening experience. It provides a simple and intuitive interface to apply precise corrections to your headphones, based on recognized correction profiles to improve sound fidelity.
+> AudioEZ is a program with a modern interface and some additional features for Equalizer APO.
 
 ## 📸 Screenshots
 
@@ -10,10 +10,19 @@
 
 ## ✨ Features
 
-- **Automatic Headphone Correction:** Applies pre-calculated correction profiles for a wide range of headphones.
-- **Intuitive User Interface:** A modern and clean interface, making it easy to select and apply corrections.
-- **Lightweight and Efficient:** Designed to run without impacting your system's performance.
-- **Equalizer APO Integration:** Uses Equalizer APO as a backend for maximum compatibility and efficiency.
+- **Modern and Intuitive Interface** : Navigating and applying EQ profiles has never been easier.
+
+- **AutoEq Integration** : Pre-calculated profiles for a wide range of headphones directly built in.
+
+- **Create and Manage Multiple Configurations** : Easily save and load your favorite EQ profiles.
+
+- **Enable EQ on Startup** : Automatically applies your equalization profile when the application launches.
+
+- **Automatic Earphone Detection** : The app detects your connected earphones and applies the corresponding profile.
+
+- **Persistent Settings** : Restores the application exactly where you left off.
+
+- **Advanced Band Visualization** : Three distinct curves: target, earphone, and earphone with applied parameters.
 
 ## 🔨 Updates
 - **[Version 1.0] - 2025-12-14**: Initial release with support for core functionalities.
