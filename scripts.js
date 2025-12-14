@@ -1,6 +1,5 @@
 /** 
  * AudioEZ - Main Application JavaScript
- * Refactored and organized version
  */
 
 class AudioEZApp {
