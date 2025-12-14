@@ -4,9 +4,9 @@
 
 ## 📸 Screenshots
 
-![CF AudioEz Screenshot](https://github.com/user-attachments/assets/3b6cbb9e-e31f-4fee-85ff-a304b478f076)
-![AudioEZ Screenshot](https://github.com/user-attachments/assets/ec8cde1e-7f9f-4cca-a69b-a325563e88a7)
-![AudioEZ Params Screenshot](https://github.com/user-attachments/assets/f5d11e5a-6b93-483b-babf-9a8a9b91f91d)
+<img width="501" height="383" alt="image" src="https://github.com/user-attachments/assets/0c0829f4-b958-4d5d-914f-982d156ac9d6" />
+<img width="1148" height="932" alt="image" src="https://github.com/user-attachments/assets/fbb6555f-62d0-483a-bb19-428b7775e0d2" />
+<img width="1144" height="925" alt="image" src="https://github.com/user-attachments/assets/f5a5b20c-faeb-4f06-a699-5e32e195bc77" />
 
 ## ✨ Features
 
@@ -16,7 +16,7 @@
 - **Equalizer APO Integration:** Uses Equalizer APO as a backend for maximum compatibility and efficiency.
 
 ## 🔨 Updates
-- **[Version 1.0] - 2025-08-10**: Initial release with support for core functionalities.
+- **[Version 1.0] - 2025-12-14**: Initial release with support for core functionalities.
 
 ## ⚙️ Installation
 
@@ -36,7 +36,7 @@ If you enjoy the project and want to support its development, you can buy me a c
 
 - **PainDe0Mie** - Developer
   - [GitHub Profile](https://www.github.com/PainDe0Mie)
-  - [AudioEZ](https://github.com/PainDe0Mie/AudioEZ/)
+  - [AudioEZ Github](https://github.com/PainDe0Mie/AudioEZ/) <-- This project.
  
 - **jaakkopasanen** - AutoEq
   - [Github Profile](https://github.com/jaakkopasanen/)
