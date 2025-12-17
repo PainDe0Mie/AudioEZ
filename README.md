@@ -29,11 +29,7 @@
 
 ## ⚙️ Installation
 
-1.  **Download AudioEZ**:
-    Download the latest executable from the releases page.
-
-2.  **Launch the application**:
-    Run the `AudioEZ.exe` file.
+* Exe file soon
 
 ## 🤝 Support
 
