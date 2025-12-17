@@ -29,7 +29,17 @@
 
 ## ⚙️ Installation
 
-* Exe file soon
+1. **Download the installer**  
+   [Download AudioEZ](https://github.com/PainDe0Mie/AudioEZ/releases/download/v1.0.0b/AudioEZ_SETUP-v1.0.0.exe)
+   [Release](https://github.com/PainDe0Mie/AudioEZ/releases/tag/v1.0.0b)
+
+2. **Run the installer**  
+   - Double-click the downloaded `.exe` file.  
+   - Follow the installation wizard.  
+
+3. **Launch AudioEZ**  
+   - Use the desktop icon or start menu shortcut created during installation.
+   - And Enjoy it !
 
 ## 🤝 Support
 
