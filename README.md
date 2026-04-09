@@ -1,12 +1,12 @@
-## 🎧 AudioEZ - 1.0
+## 🎧 AudioEZ - 1.1
 
 > AudioEZ is a program with a modern interface and some additional features for Equalizer APO.
 
 ## 📸 Screenshots
 
-<img width="501" height="383" alt="image" src="https://github.com/user-attachments/assets/0c0829f4-b958-4d5d-914f-982d156ac9d6" />
-<img width="1148" height="932" alt="image" src="https://github.com/user-attachments/assets/fbb6555f-62d0-483a-bb19-428b7775e0d2" />
-<img width="1144" height="925" alt="image" src="https://github.com/user-attachments/assets/f5a5b20c-faeb-4f06-a699-5e32e195bc77" />
+<img width="493" height="375" alt="image" src="https://github.com/user-attachments/assets/c6ff83f3-103e-4990-8bdc-ec7f22db0729" />
+<img width="1142" height="925" alt="image" src="https://github.com/user-attachments/assets/7a54cb17-f5dd-4ded-ae33-6447a3793ad6" />
+<img width="924" height="963" alt="image" src="https://github.com/user-attachments/assets/17bfc2e5-b51a-47bd-8dcb-98c62aa2fb3b" />
 
 ## ✨ Features
 
@@ -25,6 +25,7 @@
 - **Advanced Band Visualization** : Three distinct curves: target, earphone, and earphone with applied parameters.
 
 ## 🔨 Updates
+- **[Version 1.1] - 2026-04-09**: Fix bugs, add features and optimization.
 - **[Version 1.0] - 2025-12-14**: Initial release with support for core functionalities.
 
 ## ⚙️ Installation
