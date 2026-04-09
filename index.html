@@ -90,7 +90,7 @@
                         </div>
                     </div>
 
-                    <!-- Button toolbar — single row, semantic groups -->
+                    <!-- Button toolbar - single row, semantic groups -->
                     <div class="config-toolbar">
 
                         <!-- Group 1: History -->
@@ -109,7 +109,7 @@
 
                         <!-- Group 2: A/B Compare -->
                         <div class="btn-group-segment">
-                            <button id="ab-btn" class="btn btn-icon" title="A/B Compare — double-click to reset">
+                            <button id="ab-btn" class="btn btn-icon" title="A/B Compare - double-click to reset">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="9" height="18" rx="2"/><rect x="13" y="3" width="9" height="18" rx="2"/></svg>
                                 <span id="ab-btn-label">A/B</span>
                             </button>
@@ -656,57 +656,57 @@
             <div class="modal-body changelog-body">
 
                 <div class="changelog-section changelog-hero">
-                    <p class="changelog-intro">AudioEZ v1.1 is here — the biggest update yet. New smart features, a cleaner interface, and a ton of fixes under the hood. Here's everything that's new 👇</p>
+                    <p class="changelog-intro">AudioEZ v1.1. New features, a cleaner interface, and a ton of fixes under the hood. Here's everything that's new 👇</p>
                 </div>
 
                 <div class="changelog-section">
                     <h3>✨ New features</h3>
                     <ul>
-                        <li><strong>Auto-Preamp</strong> — Hit "Auto" next to the preamp slider and AudioEZ figures out the ideal negative preamp for you based on your current EQ. No more clipping.</li>
-                        <li><strong>Arrow key control on the graph</strong> — Select a point, then use ↑↓ to adjust gain by 0.5 dB and ←→ to move its frequency. Hold Shift for finer 0.1 dB / 0.01-step moves.</li>
-                        <li><strong>Hover tooltip on the curve</strong> — Move your mouse over the EQ graph and you'll see the exact frequency and gain at your cursor — no need to click.</li>
-                        <li><strong>Wavelet import</strong> — You could already export to Wavelet (.json) format. Now you can import those files too.</li>
-                        <li><strong>Preset tags &amp; filtering</strong> — Tag any preset (IEM, Over-ear, Gaming, Music, Custom…) and filter the preset list by tag. Rename button also added next to the list.</li>
-                        <li><strong>Band count conversion on export</strong> — Export a 10-band EQ as 5 bands (or any other count). AudioEZ resamples the curve automatically.</li>
-                        <li><strong>Undo / Redo</strong> — Up to 50 steps. Ctrl+Z / Ctrl+Y or the toolbar buttons.</li>
-                        <li><strong>A/B Compare</strong> — Freeze a reference snapshot and switch between it and your live EQ on the fly.</li>
-                        <li><strong>Reset EQ</strong> — One button to flatten everything back to zero.</li>
-                        <li><strong>Scroll wheel on graph</strong> — Hover a band point and scroll to adjust gain. Shift = fine mode.</li>
-                        <li><strong>Export to APO Include</strong> — Writes directly to the EQ APO config folder without touching your other plugins.</li>
-                        <li><strong>System Tray</strong> — AudioEZ stays in your tray. Toggle the EQ or reopen the window without keeping it on your taskbar.</li>
+                        <li><strong>Auto-Preamp</strong> - Hit "Auto" next to the preamp slider and AudioEZ figures out the ideal negative preamp for you based on your current EQ.</li>
+                        <li><strong>Arrow key control on the graph</strong> - Select a point, then use ↑↓ to adjust gain by 0.5 dB and ←→ to move its frequency. Hold Shift for finer 0.1 dB / 0.01-step moves.</li>
+                        <li><strong>Hover tooltip on the curve</strong> - Move your mouse over the EQ graph and you'll see the exact frequency and gain at your cursor.</li>
+                        <li><strong>Wavelet import</strong> - Now you can import those files too.</li>
+                        <li><strong>Preset tags &amp; filtering</strong> - Tag any preset (IEM, Over-ear, Gaming, Music, Custom…) and filter the preset list by tag. Rename button also added next to the list.</li>
+                        <li><strong>Band count conversion on export</strong> - Export a 10-band EQ as 5 bands (or any other count). AudioEZ resamples the curve automatically.</li>
+                        <li><strong>Undo / Redo</strong> - Up to 50 steps. Ctrl+Z / Ctrl+Y or the toolbar buttons.</li>
+                        <li><strong>A/B Compare</strong> - Freeze a reference snapshot and switch between it and your live EQ on the fly.</li>
+                        <li><strong>Reset EQ</strong> - One button to flatten everything back to zero.</li>
+                        <li><strong>Scroll wheel on graph</strong> - Hover a band point and scroll to adjust gain. Shift = fine mode.</li>
+                        <li><strong>Export to APO Include</strong> - Writes directly to the EQ APO config folder without touching your other plugins.</li>
+                        <li><strong>System Tray</strong> - AudioEZ stays in your tray. Toggle the EQ or reopen the window without keeping it on your taskbar.</li>
                     </ul>
                 </div>
 
                 <div class="changelog-section">
                     <h3>🧠 Adaptive Filter improvements (Experimental)</h3>
                     <ul>
-                        <li><strong>Live detection badge</strong> — See what AudioEZ is currently hearing (genre, confidence %) right in the settings panel while Adaptive is on.</li>
-                        <li><strong>Advanced parameters</strong> — Tune speech sensitivity, music sensitivity, how long a genre needs to stay detected before switching, cooldown between switches, and transition speed — all from the UI, no restart needed.</li>
-                        <li><strong>Profile selector</strong> — Enable or disable specific profiles (Speech, Rock, Jazz, etc.) so the filter only switches to genres you care about.</li>
-                        <li><strong>Manual override</strong> — Touch any EQ slider while Adaptive is running and it pauses automatically, then resumes on its own after a timeout.</li>
-                        <li><strong>Much smoother transitions</strong> — Config file writes are now throttled during transitions instead of spamming your disk 50 times per second.</li>
-                        <li><strong>Better crash protection</strong> — Thread-safe shutdown, safe recorder teardown, and robust restore of your original EQ when you turn Adaptive off.</li>
+                        <li><strong>Live detection badge</strong> - See what AudioEZ is currently hearing (genre, confidence %) right in the settings panel while Adaptive is on.</li>
+                        <li><strong>Advanced parameters</strong> - Tune speech sensitivity, music sensitivity, how long a genre needs to stay detected before switching, cooldown between switches, and transition speed - all from the UI, no restart needed.</li>
+                        <li><strong>Profile selector</strong> - Enable or disable specific profiles (Speech, Rock, Jazz, etc.) so the filter only switches to genres you care about.</li>
+                        <li><strong>Manual override</strong> - Touch any EQ slider while Adaptive is running and it pauses automatically, then resumes on its own after a timeout.</li>
+                        <li><strong>Much smoother transitions</strong> - Config file writes are now throttled during transitions instead of spamming your disk 50 times per second.</li>
+                        <li><strong>Better crash protection</strong> - Thread-safe shutdown, safe recorder teardown, and robust restore of your original EQ when you turn Adaptive off.</li>
                     </ul>
                 </div>
 
                 <div class="changelog-section">
                     <h3>⚡ Performance</h3>
                     <ul>
-                        <li>APO config file writes debounced to max ~80 ms — no more hammering disk on every pixel dragged.</li>
+                        <li>APO config file writes debounced to max ~80 ms, no more hammering disk on every pixel dragged.</li>
                         <li>EQ curve is only recalculated when a parameter actually changed (hash-based cache).</li>
-                        <li>Startup verification dialog no longer freezes the UI with a blocking sleep — uses a proper timer now.</li>
+                        <li>Startup verification dialog no longer freezes the UI with a blocking sleep.</li>
                     </ul>
                 </div>
 
                 <div class="changelog-section">
                     <h3>🎨 UI polish</h3>
                     <ul>
-                        <li>Toolbar regrouped logically — Undo/Redo | A/B + Reset | Import / Save / Export | Delete (now isolated so you can't accidentally hit it).</li>
-                        <li>Rename preset moved to a dedicated pencil button (double-click on the dropdown doesn't work in Qt — now fixed).</li>
+                        <li>Toolbar regrouped logically.</li>
+                        <li>Rename preset moved to a dedicated pencil button.</li>
                         <li>Dropdown highlights no longer stay blue after hovering.</li>
                         <li>Toggle switches in the Parameters modal now animate correctly.</li>
                         <li>Shimmer animation on the Experimental badge actually works.</li>
-                        <li>Safe Mode — caps every band and preamp to a configurable limit (default ±12 dB).</li>
+                        <li>Safe Mode - caps every band and preamp to a configurable limit (default ±12 dB).</li>
                     </ul>
                 </div>
 
@@ -720,7 +720,7 @@
                         <li>Fixed export modal showing "Warning: x" placeholder on open.</li>
                         <li>Fixed close button for Parameters modal accidentally closing Export modal.</li>
                         <li>Fixed <code>backup_config</code> / <code>restore_config</code> calling a method that didn't exist.</li>
-                        <li>Fixed hardcoded 10-band limit in several places — AudioEZ now works with any band count.</li>
+                        <li>Fixed hardcoded 10-band limit in several places - AudioEZ now works with any band count.</li>
                         <li>Fixed duplicate version-check function in startup (second one was crashing silently on network errors).</li>
                         <li>Fixed Discord RPC default inconsistency.</li>
                         <li>Preset rename and delete now also clean up associated tags.</li>
@@ -752,7 +752,7 @@
             <p class="modal-confirm-message" id="tag-modal-title">Tag preset:</p>
             <div class="select-wrapper" style="margin:10px 0;width:100%;">
                 <select id="tag-modal-select">
-                    <option value="">— None —</option>
+                    <option value="">- None -</option>
                     <option value="IEM">IEM</option>
                     <option value="Over-ear">Over-ear</option>
                     <option value="Gaming">Gaming</option>
