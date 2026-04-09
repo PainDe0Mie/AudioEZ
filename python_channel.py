@@ -52,6 +52,7 @@ class PythonChannel(QObject):
     headphoneDetected = pyqtSignal(str)
     get_ET = pyqtSignal(str, str)
     settingsUpdated = pyqtSignal(str)
+    adaptiveStatusUpdate = pyqtSignal(str)  # JSON: {detection, confidence, profile, paused}
     
     def __init__(self, audio_engine, adaptive_integration):
         super().__init__()
@@ -60,6 +61,11 @@ class PythonChannel(QObject):
         self.adaptive_integration = adaptive_integration if adaptive_integration is not None else None
         self.config_manager = audio_engine.config_manager
         self.audio_engine.set_channel(self)
+        if self.adaptive_integration is not None:
+            try:
+                self.adaptive_integration.set_status_listener(self._on_adaptive_status)
+            except Exception as e:
+                print(f"Could not attach adaptive status listener: {e}")
         self._models_cache = []
         print("PythonChannel: Object registered for QWebChannel.")
 
@@ -117,12 +123,73 @@ class PythonChannel(QObject):
     @pyqtSlot(bool)
     def toggleAdaptiveFilter(self, enabled):
         """Active ou désactive le filtre adaptatif depuis l'interface."""
+        if self.adaptive_integration is None:
+            self.statusUpdate.emit("Adaptive Filter: RTGD module not available.")
+            return
         if enabled:
             self.adaptive_integration.enable_adaptive_filter()
             self.statusUpdate.emit("Adaptive Filter: Active")
         else:
             self.adaptive_integration.disable_adaptive_filter()
             self.statusUpdate.emit("Adaptive Filter: Inactive")
+
+    @pyqtSlot(str)
+    def setAdaptiveConfig(self, config_json):
+        """Hot-update Adaptive Filter parameters from JSON sent by the UI."""
+        if self.adaptive_integration is None:
+            return
+        try:
+            partial = json.loads(config_json) if config_json else {}
+        except json.JSONDecodeError:
+            print("setAdaptiveConfig: invalid JSON")
+            return
+        try:
+            self.adaptive_integration.update_config(partial)
+            self.statusUpdate.emit("Adaptive Filter: settings updated")
+        except Exception as e:
+            print(f"setAdaptiveConfig error: {e}")
+
+    @pyqtSlot(result=str)
+    def getAdaptiveConfig(self):
+        """Returns the current Adaptive Filter config + profile list as JSON."""
+        if self.adaptive_integration is None:
+            return json.dumps({'available': False})
+        try:
+            data = {
+                'available': True,
+                'config': self.adaptive_integration.config,
+                'profiles': self.adaptive_integration.get_profiles_serializable(),
+                'status': self.adaptive_integration.get_status(),
+                'enabled': self.adaptive_integration.is_adaptive_enabled,
+                'paused': self.adaptive_integration.is_paused,
+            }
+            return json.dumps(data)
+        except Exception as e:
+            print(f"getAdaptiveConfig error: {e}")
+            return json.dumps({'available': False})
+
+    @pyqtSlot(bool)
+    def setAdaptivePaused(self, paused):
+        if self.adaptive_integration is None:
+            return
+        if paused:
+            self.adaptive_integration.pause()
+        else:
+            self.adaptive_integration.resume()
+
+    @pyqtSlot()
+    def notifyManualEqChange(self):
+        """Called by JS when the user touches the EQ — pauses adaptive briefly."""
+        if self.adaptive_integration is None:
+            return
+        self.adaptive_integration.notify_manual_eq_change()
+
+    def _on_adaptive_status(self, status):
+        """Internal: forward adaptive status to JS via signal."""
+        try:
+            self.adaptiveStatusUpdate.emit(json.dumps(status))
+        except Exception:
+            pass
 
     def _update_target_curve(self, freq_list, amp_list):
         self._target_curve_freq = freq_list
@@ -413,12 +480,98 @@ class PythonChannel(QObject):
     @pyqtSlot(float)
     def set_q_factor(self, q):
         """Applique le même Q à tous les filtres et met à jour la courbe."""
-        print(f"AudioEngine: Setting Q-factor of all bands to {q:.2f}.")
-        self.q_values[:] = q
-        if self.is_playing:
-            self._apply_apo_config()
-        self.calculate_frequency_response()
+        print(f"PythonChannel: Setting Q-factor of all bands to {q:.2f}.")
+        self.audio_engine.q_values[:] = q
+        if self.audio_engine.is_playing:
+            self.audio_engine._apply_apo_config()
+        self.audio_engine.calculate_frequency_response()
 
     @pyqtSlot(int, str, float)
     def setEqualizerPointParameter(self, index, key, value):
         self.audio_engine.set_equalizer_point_parameter(index, key, value)
+
+    @pyqtSlot(str, str)
+    def setPresetTag(self, preset_name, tag):
+        """Assigne un tag à un preset."""
+        if not preset_name:
+            return
+        self.config_manager.set_tag(preset_name, tag)
+        self.statusUpdate.emit(f"Tag '{tag}' assigned to '{preset_name}'." if tag else f"Tag removed from '{preset_name}'.")
+        # Refresh the config list so the UI re-renders with the new tag info
+        config_list = self.config_manager.get_config_names()
+        self.configListUpdate.emit(config_list, self.config_manager.active_config)
+
+    @pyqtSlot(result=str)
+    def getPresetTags(self):
+        """Retourne tous les tags de presets en JSON."""
+        return json.dumps(self.config_manager.get_all_tags())
+
+    @pyqtSlot(str, str)
+    def renameConfig(self, old_name, new_name):
+        """Renomme un preset depuis l'interface."""
+        new_name = new_name.strip()
+        if not new_name:
+            self.statusUpdate.emit("Error: config name cannot be empty.")
+            return
+        ok, result = self.config_manager.rename_config(old_name, new_name)
+        if ok:
+            config_list = self.config_manager.get_config_names()
+            self.configListUpdate.emit(config_list, new_name)
+            self.statusUpdate.emit(f"Preset renamed to '{new_name}'.")
+        else:
+            self.statusUpdate.emit(f"Rename failed: {result}")
+
+    @pyqtSlot()
+    def exportToApoInclude(self):
+        """Exporte la config active en fichier Include EQ APO."""
+        self.audio_engine.export_to_apo_include()
+
+    @pyqtSlot(bool, float)
+    def setSafeMode(self, enabled, max_db):
+        """Active/désactive le mode safe et fixe le gain max autorisé."""
+        self.audio_engine.safe_mode = enabled
+        self.audio_engine.safe_mode_max_db = max_db
+        state = "enabled" if enabled else "disabled"
+        self.statusUpdate.emit(f"Safe mode {state} (±{max_db:.0f} dB max).")
+
+    @pyqtSlot(str)
+    def setLastSeenVersion(self, version):
+        """Enregistre la version vue dans settings.json (changelog)."""
+        self.settings['last_seen_version'] = version
+        self.save_settings()
+
+    @pyqtSlot(int)
+    def resizeBands(self, new_count):
+        """Redimensionne le nombre de bandes EQ et resynchronise l'état."""
+        import numpy as np
+        ae = self.audio_engine
+        current = len(ae.bands)
+        if new_count == current:
+            return
+
+        if new_count > current:
+            # Add bands, spread them evenly in log scale
+            import math
+            log_min = math.log10(20)
+            log_max = math.log10(20000)
+            step = (log_max - log_min) / (new_count - 1) if new_count > 1 else 0
+            new_bands = [round(10 ** (log_min + i * step)) for i in range(new_count)]
+            # Keep existing gains/q/types for existing bands
+            new_gains = list(ae.gains) + [0.0] * (new_count - current)
+            new_q     = list(ae.q_values) + [1.414] * (new_count - current)
+            new_types = list(ae.filter_types) + ['PK'] * (new_count - current)
+            ae.bands        = new_bands
+            ae.gains        = np.array(new_gains)
+            ae.q_values     = np.array(new_q)
+            ae.filter_types = new_types
+        else:
+            ae.bands        = ae.bands[:new_count]
+            ae.gains        = ae.gains[:new_count]
+            ae.q_values     = ae.q_values[:new_count]
+            ae.filter_types = ae.filter_types[:new_count]
+            # Deselect if selected band is now out of range
+        ae.band_count = new_count
+        ae._last_eq_hash = None
+        ae.send_full_ui_update()
+        if ae.is_playing:
+            ae._apply_apo_config()

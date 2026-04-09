@@ -1,7 +1,20 @@
 from multiprocessing import freeze_support
 freeze_support() # For exe build (with pyinstaller)
 
-import json, re, os, sys, difflib
+import json, re, os, sys, difflib, logging
+from logging.handlers import RotatingFileHandler
+
+def setup_logging(log_dir):
+    """Configure le logging avec rotation (5 Mo × 2 fichiers)."""
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "audioez.log")
+    handler = RotatingFileHandler(log_path, maxBytes=5 * 1024 * 1024, backupCount=2, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    root.addHandler(handler)
+    root.addHandler(logging.StreamHandler(sys.stdout))
+    logging.info("AudioEZ logging initialised.")
 
 def get_resource_path(relative_path):
     try:
@@ -20,7 +33,7 @@ import numpy as np
 from collections import defaultdict
 from pypresence import Presence
 from PyQt6.QtCore import QUrl, QCoreApplication, Qt, QTimer, QLockFile, QDir
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QMessageBox, QDialog, QPushButton, QLabel, QHBoxLayout
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QMessageBox, QDialog, QPushButton, QLabel, QHBoxLayout, QSystemTrayIcon, QMenu
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtWebEngineCore import QWebEngineSettings
@@ -257,7 +270,7 @@ class AudioEZWindow(QMainWindow):
         from audio_engine import AudioEngine
         from python_channel import PythonChannel
 
-        self.setWindowTitle("AudioEZ - V1")
+        self.setWindowTitle("AudioEZ - V1.1")
         self.setGeometry(100, 100, 1150, 900) 
         
         self.webview = QWebEngineView()
@@ -294,10 +307,20 @@ class AudioEZWindow(QMainWindow):
         except (FileNotFoundError, json.JSONDecodeError):
             pass
         
+        adaptive_user_cfg = temp_settings.get('adaptive_config', {}) or {}
         rtgd_config = {
-            'refine_window': temp_settings.get('adaptive_analysis_duration', 5.0),
-            'hysteresis_delay': temp_settings.get('adaptive_hysteresis_delay', 10.0),
-            'cooldown_period': temp_settings.get('adaptive_cooldown_period', 30.0)
+            'analysis_window': float(adaptive_user_cfg.get('analysis_window', 4.0)),
+            'analysis_interval': float(adaptive_user_cfg.get('analysis_interval', 2.0)),
+            'hysteresis_delay': float(adaptive_user_cfg.get('hysteresis_delay', 8.0)),
+            'cooldown_period': float(adaptive_user_cfg.get('cooldown_period', 12.0)),
+            'transition_duration': float(adaptive_user_cfg.get('transition_duration', 1.5)),
+            'speech_threshold': float(adaptive_user_cfg.get('speech_threshold', 0.6)),
+            'movie_threshold': float(adaptive_user_cfg.get('movie_threshold', 0.5)),
+            'music_genre_threshold': float(adaptive_user_cfg.get('music_genre_threshold', 0.4)),
+            'general_music_threshold': float(adaptive_user_cfg.get('general_music_threshold', 0.2)),
+            'manual_override_pause': bool(adaptive_user_cfg.get('manual_override_pause', True)),
+            'manual_override_timeout': float(adaptive_user_cfg.get('manual_override_timeout', 30.0)),
+            'enabled_profiles': adaptive_user_cfg.get('enabled_profiles', None),
         }
         
         self.adaptive_integration = None
@@ -332,6 +355,57 @@ class AudioEZWindow(QMainWindow):
         self.load_persistent_state()
 
         self.webview.loadFinished.connect(self.on_load_finished)
+
+        # System tray
+        self._setup_tray()
+
+    def _setup_tray(self):
+        """Crée l'icône dans la barre des tâches Windows."""
+        self.tray_icon = QSystemTrayIcon(self)
+        icon = self.windowIcon()
+        if not icon.isNull():
+            self.tray_icon.setIcon(icon)
+
+        tray_menu = QMenu()
+
+        show_action = tray_menu.addAction("Open AudioEZ")
+        show_action.triggered.connect(self._tray_show)
+
+        tray_menu.addSeparator()
+
+        self.tray_toggle_action = tray_menu.addAction("Enable EQ")
+        self.tray_toggle_action.triggered.connect(self._tray_toggle_eq)
+
+        tray_menu.addSeparator()
+
+        quit_action = tray_menu.addAction("Quit")
+        quit_action.triggered.connect(QCoreApplication.instance().quit)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.setToolTip("AudioEZ V1.1")
+        self.tray_icon.activated.connect(self._tray_activated)
+
+        # Update tray toggle label when playback state changes
+        self.py_channel.playbackStateChanged.connect(self._update_tray_toggle_label)
+        self.tray_icon.show()
+
+    def _tray_show(self):
+        self.showNormal()
+        self.activateWindow()
+        self.raise_()
+
+    def _tray_toggle_eq(self):
+        if self.audio_engine.is_playing:
+            self.audio_engine.stop_playback()
+        else:
+            self.audio_engine.start_playback()
+
+    def _update_tray_toggle_label(self, is_playing):
+        self.tray_toggle_action.setText("Disable EQ" if is_playing else "Enable EQ")
+
+    def _tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self._tray_show()
 
     def load_persistent_state(self):
         """Charge l'état persistant de l'application si activé"""
@@ -528,6 +602,7 @@ def main():
     os.environ["QT_SCALE_FACTOR"] = "1"
     
     initialize_config()
+    setup_logging(config.APP_CONFIGS_DIR)
     config.RPC = initialize_discord_rpc()
 
     app = QApplication(sys.argv)

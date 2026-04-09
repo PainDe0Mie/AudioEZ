@@ -12,6 +12,8 @@ class ConfigManager(QObject):
         self.configs = {}
         self.active_config = "Default"
         self.config_file = os.path.join(config.APP_CONFIGS_DIR, "presets.json")
+        self.tags_file = os.path.join(config.APP_CONFIGS_DIR, "presets_tags.json")
+        self.tags = {}  # { preset_name: tag_string }
 
     def get_config_names(self):
         return ["Default"] + [name for name in sorted(self.configs.keys()) 
@@ -34,11 +36,37 @@ class ConfigManager(QObject):
             except Exception as e:
                 print(f"Error loading configurations: {e}", file=sys.stderr)
         self.set_active_config("Default")
+        self.load_tags()
 
     def save_configs(self):
         with open(self.config_file, 'w') as f:
             json.dump(self.configs, f, indent=4)
-                                                                               # 2048 like the game ;)
+
+    def load_tags(self):
+        if os.path.exists(self.tags_file):
+            try:
+                with open(self.tags_file, 'r', encoding='utf-8') as f:
+                    self.tags = json.load(f)
+            except Exception:
+                self.tags = {}
+
+    def save_tags(self):
+        with open(self.tags_file, 'w', encoding='utf-8') as f:
+            json.dump(self.tags, f, indent=2, ensure_ascii=False)
+
+    def set_tag(self, preset_name, tag):
+        if tag:
+            self.tags[preset_name] = tag
+        elif preset_name in self.tags:
+            del self.tags[preset_name]
+        self.save_tags()
+
+    def get_tag(self, preset_name):
+        return self.tags.get(preset_name, "")
+
+    def get_all_tags(self):
+        return dict(self.tags)
+
     def load_config_by_name(self, name):
         return self.configs.get(name)
 
@@ -46,9 +74,29 @@ class ConfigManager(QObject):
         if name in self.configs:
             del self.configs[name]
             self.save_configs()
+            if name in self.tags:
+                del self.tags[name]
+                self.save_tags()
             print(f"Configuration '{name}' supprimée de presets.json.")
         else:
             print(f"La configuration '{name}' n'existe pas.")
+
+    def rename_config(self, old_name, new_name):
+        """Renomme un preset en conservant ses données."""
+        if old_name == "Default":
+            return False, "Cannot rename the Default configuration."
+        if old_name not in self.configs:
+            return False, f"Configuration '{old_name}' not found."
+        if new_name in self.configs:
+            return False, f"A configuration named '{new_name}' already exists."
+        self.configs[new_name] = self.configs.pop(old_name)
+        self.save_configs()
+        if old_name in self.tags:
+            self.tags[new_name] = self.tags.pop(old_name)
+            self.save_tags()
+        if self.active_config == old_name:
+            self.active_config = new_name
+        return True, new_name
 
     def save_config(self, name, data):
         self.configs[name] = data
@@ -180,12 +228,8 @@ class ConfigManager(QObject):
                     self.audio_engine.bands = imported_data.get('bands', self.audio_engine.bands)
                     self.audio_engine.gains = np.array(imported_data.get('gains', np.zeros(len(self.audio_engine.bands)).tolist()))
                     self.audio_engine.q_values = np.array(imported_data.get('q_values', np.full(len(self.audio_engine.bands), 1.41).tolist()))
-                    self.audio_engine.filter_types = imported_data.get('filter_types', ['PK'] * len(bands)) # Explicitly update the filter types
+                    self.audio_engine.filter_types = imported_data.get('filter_types', ['PK'] * len(self.audio_engine.bands))
                     self.set_active_config(name)
-
-                elif isinstance(imported_data, dict):
-                    self.configs.update(imported_data)
-                    self.audio_engine.py_channel.statusUpdate.emit("All configurations imported successfully.")
 
             elif ext.lower() == '.peace':
                 try:
@@ -274,6 +318,53 @@ class ConfigManager(QObject):
                 self.configs[name] = imported_data
                 self.audio_engine.py_channel.statusUpdate.emit(f"Configuration '{name}' importée avec succès.")
 
+            elif ext.lower() in ['.json', '.wavelet']:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    wavelet_data = json.load(f)
+
+                preamp = float(wavelet_data.get('preamp', 0.0))
+                filters = wavelet_data.get('filters', [])
+
+                if not filters:
+                    raise ValueError("No valid filters found in Wavelet JSON file.")
+
+                type_map = {
+                    'peaking': 'PK', 'lowshelf': 'LS', 'highshelf': 'HS',
+                    'lowpass': 'LP', 'highpass': 'HP', 'bandpass': 'BP',
+                    'notch': 'NO', 'allpass': 'AP',
+                    'pk': 'PK', 'ls': 'LS', 'hs': 'HS', 'lp': 'LP',
+                    'hp': 'HP', 'bp': 'BP', 'no': 'NO', 'ap': 'AP',
+                    'lsq': 'LSQ', 'hsq': 'HSQ'
+                }
+
+                new_bands = []
+                new_gains = []
+                new_q_values = []
+                new_filter_types = []
+
+                for filt in filters:
+                    freq = float(filt.get('frequency', filt.get('fc', 1000)))
+                    gain = float(filt.get('gain', 0.0))
+                    q = float(filt.get('q', filt.get('Q', 1.41)))
+                    ftype = str(filt.get('type', 'peaking')).lower()
+                    ftype = type_map.get(ftype, 'PK')
+
+                    new_bands.append(freq)
+                    new_gains.append(gain)
+                    new_q_values.append(q)
+                    new_filter_types.append(ftype)
+
+                imported_data = {
+                    'pre_gain_db': preamp,
+                    'bands': new_bands,
+                    'gains': new_gains,
+                    'q_values': new_q_values,
+                    'filter_types': new_filter_types
+                }
+
+                self.configs[name] = imported_data
+                self.audio_engine.py_channel.statusUpdate.emit(f"Wavelet configuration '{name}' imported successfully.")
+
             else:
                 raise ValueError("Unsupported file format.")
 
@@ -285,7 +376,7 @@ class ConfigManager(QObject):
                 self.audio_engine.gains = np.array(imported_data.get('gains', np.zeros(len(self.audio_engine.bands)).tolist()))
                 self.audio_engine.bands = imported_data.get('bands', self.audio_engine.bands)
                 self.audio_engine.q_values = np.array(imported_data.get('q_values', np.full(len(self.audio_engine.bands), 1.41).tolist()))
-                self.audio_engine.filter_types = imported_data.get('filter_types', ['PK'] * len(bands)) # Explicitly update the filter types
+                self.audio_engine.filter_types = imported_data.get('filter_types', ['PK'] * len(self.audio_engine.bands))
                 self.set_active_config(name)
 
         except Exception as e:

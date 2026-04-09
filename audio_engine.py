@@ -1,6 +1,6 @@
 import json, os, sys, csv
 import numpy as np
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import QFileDialog
 
 import config
@@ -32,6 +32,19 @@ class AudioEngine(QObject):
 
         self.autoeq_cache_timestamp = None
         self.autoeq_models = []
+
+        # Debounce timer for APO file writes (80 ms)
+        self._apo_write_timer = QTimer()
+        self._apo_write_timer.setSingleShot(True)
+        self._apo_write_timer.setInterval(80)
+        self._apo_write_timer.timeout.connect(self._apply_apo_config)
+
+        # Frequency response cache — skip recalc if nothing changed
+        self._last_eq_hash = None
+
+        # Safe mode
+        self.safe_mode = False
+        self.safe_mode_max_db = 12.0
         os.makedirs(self.AUTOEQ_CACHE_DIR, exist_ok=True)
 
         print("AudioEngine: Initialized.")
@@ -447,40 +460,38 @@ class AudioEngine(QObject):
 
     def write_disabled_config(self):
         """Écrit une configuration désactivée dans config.txt"""
-        config_path = self.get_config_path()
-        
         try:
-            with open(config_path, 'w', encoding='utf-8') as f:
+            with open(config.EAPO_CONFIG_PATH, 'w', encoding='utf-8') as f:
                 f.write("# AudioEZ - Equalizer Disabled\n")
                 f.write("Preamp: 0 dB\n")
-                for i in range(1, 11):
+                for i in range(1, len(self.bands) + 1):
                     f.write(f"Filter {i}: OFF None\n")
-            
+
             print("Configuration EQ APO désactivée avec succès")
             return True
         except Exception as e:
             print(f"Erreur écriture config désactivée: {e}")
             return False
-    
+
     def backup_config(self):
-        config_path = self.get_config_path()
-        backup_path = config_path.with_suffix('.txt.bak')
-        
+        config_path = config.EAPO_CONFIG_PATH
+        backup_path = config_path + '.bak'
+
         try:
-            if config_path.exists():
+            if os.path.exists(config_path):
                 import shutil
                 shutil.copy2(config_path, backup_path)
                 return True
         except Exception as e:
             print(f"Error save config: {e}")
             return False
-    
+
     def restore_config(self):
-        config_path = self.get_config_path()
-        backup_path = config_path.with_suffix('.txt.bak')
-        
+        config_path = config.EAPO_CONFIG_PATH
+        backup_path = config_path + '.bak'
+
         try:
-            if backup_path.exists():
+            if os.path.exists(backup_path):
                 import shutil
                 shutil.copy2(backup_path, config_path)
                 return True
@@ -548,7 +559,12 @@ class AudioEngine(QObject):
             print(error_msg, file=sys.stderr)
 
     def calculate_frequency_response(self):
-        """Calcule et met à jour la réponse fréquentielle"""
+        """Calcule et met à jour la réponse fréquentielle (cached)"""
+        current_hash = self._get_eq_state_hash()
+        if current_hash is not None and current_hash == self._last_eq_hash:
+            return
+        self._last_eq_hash = current_hash
+
         freqs = np.logspace(np.log10(20), np.log10(20000), 512)
 
         valid_triplets = [
@@ -620,7 +636,7 @@ class AudioEngine(QObject):
             
             with open(config.EAPO_CONFIG_PATH, "w", encoding="utf-8") as f:
                 f.write("Preamp: 0 dB\n")
-                for i in range(1, 11):
+                for i in range(1, len(self.bands) + 1):
                     f.write(f"Filter {i}: OFF None\n")
 
         except Exception as e:
@@ -633,37 +649,56 @@ class AudioEngine(QObject):
             self.py_channel.statusUpdate.emit("AudioEZ disabled.")
         self._update_and_emit_playback_state()
 
+    def _schedule_apo_write(self):
+        """Debounce APO file writes: restart the 80 ms timer on each call."""
+        if self.is_playing:
+            self._apo_write_timer.start()
+
+    def _get_eq_state_hash(self):
+        """Return a hash of the full EQ state for cache invalidation."""
+        try:
+            state = (
+                tuple(self.bands),
+                tuple(round(float(g), 4) for g in self.gains),
+                tuple(round(float(q), 4) for q in self.q_values),
+                tuple(self.filter_types),
+                round(self.pre_gain_db, 4),
+                round(self.bass_gain_db, 4),
+                round(self.treble_gain_db, 4),
+            )
+            return hash(state)
+        except Exception:
+            return None
+
+    def _clamp_gain(self, value):
+        """In safe mode, clamp gain to ±safe_mode_max_db."""
+        if self.safe_mode:
+            return max(-self.safe_mode_max_db, min(self.safe_mode_max_db, value))
+        return value
+
     def set_gain_and_frequency(self, band_index, gain_db, frequency):
         """Définit le gain et la fréquence pour une bande spécifique"""
         if 0 <= band_index < len(self.gains):
-            self.gains[band_index] = gain_db
+            self.gains[band_index] = self._clamp_gain(gain_db)
             self.bands[band_index] = frequency
-            print(f"AudioEngine: Setting band {band_index} to Gain={gain_db} dB, Freq={frequency} Hz.")
-            if self.is_playing:
-                self._apply_apo_config()
+            self._schedule_apo_write()
             self.calculate_frequency_response()
         else:
             print(f"AudioEngine: Invalid band index: {band_index}")
 
     def set_pre_gain(self, pre_gain_db):
-        print(f"AudioEngine: Setting pre-amp to {pre_gain_db} dB.")
-        self.pre_gain_db = pre_gain_db
-        if self.is_playing:
-            self._apply_apo_config()
+        self.pre_gain_db = self._clamp_gain(pre_gain_db)
+        self._schedule_apo_write()
         self.calculate_frequency_response()
     
     def set_bass_gain(self, gain_db):
-        print(f"AudioEngine: Setting bass gain to {gain_db} dB.")
-        self.bass_gain_db = gain_db
-        if self.is_playing:
-            self._apply_apo_config()
+        self.bass_gain_db = self._clamp_gain(gain_db)
+        self._schedule_apo_write()
         self.calculate_frequency_response()
     
     def set_treble_gain(self, gain_db):
-        print(f"AudioEngine: Setting treble gain to {gain_db} dB.")
-        self.treble_gain_db = gain_db
-        if self.is_playing:
-            self._apply_apo_config()
+        self.treble_gain_db = self._clamp_gain(gain_db)
+        self._schedule_apo_write()
         self.calculate_frequency_response()
 
     def reset_gains(self):
@@ -682,6 +717,7 @@ class AudioEngine(QObject):
         
     def send_full_ui_update(self):
         print("AudioEngine: Sending a complete UI update.")
+        self._last_eq_hash = None  # force recalc regardless of cached state
         if self.py_channel:
             self.py_channel.preampGainChanged.emit(self.pre_gain_db)
             self.py_channel.bassGainChanged.emit(self.bass_gain_db)
@@ -746,6 +782,73 @@ class AudioEngine(QObject):
         self.config_manager.save_config(config_name, config_data)
         self.py_channel.statusUpdate.emit(f"Configuration '{config_name}' saved.")
 
+    def _resample_bands(self, config_data, target_count):
+        """Resample EQ bands to a different count using the simulated frequency response curve.
+
+        The approach: compute the combined gain curve from the current parametric filters,
+        then pick *target_count* frequencies evenly spaced in log scale and read off
+        the gain at each frequency. Q values default to 1.41 (Butterworth) and filter
+        type defaults to PK (peaking)."""
+        import math
+
+        bands = config_data['bands']
+        gains = config_data['gains']
+        q_values = config_data['q_values']
+        filter_types = config_data['filter_types']
+
+        # Build a simple frequency response evaluator
+        def biquad_peak_response(freq, fc, gain_db, Q):
+            """Return linear magnitude of a peaking EQ at *freq*."""
+            A = 10 ** (gain_db / 40.0)
+            w0 = 2 * math.pi * fc / 48000.0
+            w  = 2 * math.pi * freq / 48000.0
+            alpha = math.sin(w0) / (2 * Q)
+            cos_w0 = math.cos(w0)
+            b0 = (1 + alpha * A)
+            b1 = -2 * cos_w0
+            b2 = (1 - alpha * A)
+            a0 = (1 + alpha / A)
+            a1 = -2 * cos_w0
+            a2 = (1 - alpha / A)
+            cos_w = math.cos(w)
+            sin_w = math.sin(w)
+            cos_2w = math.cos(2 * w)
+            sin_2w = math.sin(2 * w)
+            nr = (b0/a0) + (b1/a0)*cos_w + (b2/a0)*cos_2w
+            ni = -(b1/a0)*sin_w - (b2/a0)*sin_2w
+            dr = 1 + (a1/a0)*cos_w + (a2/a0)*cos_2w
+            di = -(a1/a0)*sin_w - (a2/a0)*sin_2w
+            num = math.sqrt(nr*nr + ni*ni)
+            den = math.sqrt(dr*dr + di*di) or 1e-12
+            return num / den
+
+        def total_gain_db(freq):
+            lin = 1.0
+            for i in range(len(bands)):
+                lin *= biquad_peak_response(freq, bands[i], gains[i], q_values[i])
+            return 20 * math.log10(max(lin, 1e-12))
+
+        # Generate new bands evenly spaced in log scale
+        log_min = math.log10(20)
+        log_max = math.log10(20000)
+        step = (log_max - log_min) / (target_count - 1) if target_count > 1 else 0
+        new_bands = [round(10 ** (log_min + i * step)) for i in range(target_count)]
+        new_gains = [round(total_gain_db(f), 1) for f in new_bands]
+        new_q = [1.41] * target_count
+        new_types = ['PK'] * target_count
+
+        print(f"AudioEngine: Resampled {len(bands)} bands → {target_count} bands for export.")
+
+        return {
+            "pre_gain_db": config_data['pre_gain_db'],
+            "bass_gain_db": config_data['bass_gain_db'],
+            "treble_gain_db": config_data['treble_gain_db'],
+            "bands": new_bands,
+            "gains": new_gains,
+            "q_values": new_q,
+            "filter_types": new_types
+        }
+
     def export_config(self, export_data):
         try:
             
@@ -781,11 +884,7 @@ class AudioEngine(QObject):
             base_name = os.path.splitext(suggested_file_name)[0]
             suggested_file_name = base_name + extension
 
-            file_dialog = QFileDialog()
-            file_dialog.setAcceptMode(QFileDialog.AcceptSave)
-            file_dialog.setWindowTitle("Sauvegarder la configuration de l'égaliseur")
-            
-            file_name, _ = file_dialog.getSaveFileName(
+            file_name, _ = QFileDialog.getSaveFileName(
                 None,
                 "Enregistrer la configuration",
                 suggested_file_name,
@@ -798,15 +897,20 @@ class AudioEngine(QObject):
                 return
 
             active_config_data = {
-                "pre_gain_db": self.pre_gain_db, 
+                "pre_gain_db": self.pre_gain_db,
                 "bass_gain_db": self.bass_gain_db,
                 "treble_gain_db": self.treble_gain_db,
                 "bands": [b for b in self.bands],
-                "gains": [g for g in self.gains],
-                "q_values": [q for q in self.q_values],
+                "gains": [float(g) for g in self.gains],
+                "q_values": [float(q) for q in self.q_values],
                 "filter_types": [t for t in self.filter_types]
             }
-            
+
+            target_bands = int(export_data.get('targetBands', 0))
+            current_count = len(self.bands)
+            if target_bands > 0 and target_bands != current_count:
+                active_config_data = self._resample_bands(active_config_data, target_bands)
+
             self.config_manager.export_single_config(file_name, active_config_data)
 
             print(f"AudioEngine: Configuration exportée avec succès vers {file_name}.")
@@ -816,6 +920,54 @@ class AudioEngine(QObject):
             print(f"AudioEngine: Erreur lors de l'exportation: {e}", file=sys.stderr)
             self.py_channel.statusUpdate.emit(f"L'exportation a échoué: {e}")
         
+    def export_to_apo_include(self):
+        """
+        Exporte la config active en .txt dans le dossier EQ APO et ajoute
+        une directive 'Include: AudioEZ.txt' dans config.txt si elle n'y est pas.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            apo_config_dir = os.path.dirname(config.EAPO_CONFIG_PATH)
+            include_file = os.path.join(apo_config_dir, "AudioEZ.txt")
+
+            # Write the EQ filters to the include file
+            lines = [f"Preamp: {self.pre_gain_db:.1f} dB"]
+            for i in range(len(self.bands)):
+                lines.append(
+                    f"Filter {i+1}: ON {self.filter_types[i]} Fc {self.bands[i]} Hz "
+                    f"Gain {float(self.gains[i]):.1f} dB Q {float(self.q_values[i]):.2f}"
+                )
+            idx = len(self.bands) + 1
+            if self.bass_gain_db != 0:
+                lines.append(f"Filter {idx}: ON LS Fc 100 Hz Gain {self.bass_gain_db:.1f} dB Q 0.71")
+                idx += 1
+            if self.treble_gain_db != 0:
+                lines.append(f"Filter {idx}: ON HS Fc 8000 Hz Gain {self.treble_gain_db:.1f} dB Q 0.71")
+
+            with open(include_file, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+
+            # Patch main config.txt to add Include directive
+            include_directive = "Include: AudioEZ.txt"
+            if os.path.exists(config.EAPO_CONFIG_PATH):
+                with open(config.EAPO_CONFIG_PATH, "r", encoding="utf-8") as f:
+                    content = f.read()
+                if include_directive not in content:
+                    with open(config.EAPO_CONFIG_PATH, "a", encoding="utf-8") as f:
+                        f.write(f"\n{include_directive}\n")
+
+            msg = f"Exported to {os.path.basename(include_file)} (Include directive added)."
+            logger.info(msg)
+            if self.py_channel:
+                self.py_channel.statusUpdate.emit(msg)
+
+        except Exception as e:
+            err = f"Export to APO Include failed: {e}"
+            logger.error(err)
+            if self.py_channel:
+                self.py_channel.statusUpdate.emit(err)
+
     def export_all_configs(self):
         file_path, _ = QFileDialog.getSaveFileName(
             None, 
@@ -832,7 +984,7 @@ class AudioEngine(QObject):
             None,
             "Import a configuration",
             "",
-            "AudioEZ Configuration Files (*.aez);;Peace Configuration File (*.peace);;Equalizer APO text file (*.txt);;All Files (*)"
+            "AudioEZ Configuration Files (*.aez);;Wavelet Config (*.json *.wavelet);;Peace Configuration File (*.peace);;Equalizer APO text file (*.txt);;All Files (*)"
         )
         if file_path:
             self.config_manager.import_config(file_path)

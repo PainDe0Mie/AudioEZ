@@ -43,7 +43,19 @@ class AudioEZApp {
         this.LOG_MAX_FREQ = Math.log10(this.MAX_FREQ);
 
         this.appSettings = {};
-        
+
+        // Undo/Redo history (max 50 snapshots)
+        this._undoStack = [];
+        this._redoStack = [];
+        this._historyPaused = false;
+
+        // A/B compare
+        this._abSlotA = null;   // frozen reference snapshot
+        this._abActive = false; // true = currently showing A
+
+        // Debounce timer id for Python calls during drag
+        this._pyDebounceTimer = null;
+
         this.init();
     }
 
@@ -184,6 +196,8 @@ class AudioEZApp {
             exportFormatRadios: document.querySelectorAll('input[name="export-format"]'),
             graphicOptionsDiv: document.getElementById('graphic-options'),
             exportPointBandsValue: document.getElementById('export-point-bands-value'),
+            exportTargetBands: document.getElementById('export-target-bands'),
+            parametricBandsOption: document.getElementById('parametric-bands-option'),
             platformSelect: document.getElementById('platform-select'),
             warningMessage: document.getElementById('Warning-message'),
             successMessage: document.getElementById('Success-message'),
@@ -191,7 +205,7 @@ class AudioEZApp {
             // Parameters Modal
             parametersModal: document.getElementById('parameters-modal'),
             closeParametersModalBtn: document.getElementById('close-parameters-modal'),
-            saveParametersBtn: document.getElementById('save-parameters-btn'),
+            saveParametersBtn: null, // removed — settings auto-save
             parametersBtn: document.getElementById('parameters-btn'),
             detectEarphoneCheckbox: document.getElementById('detect-earphone'),
             PersistentStateCheckbox: document.getElementById('persistent-state'),
@@ -203,6 +217,24 @@ class AudioEZApp {
             discordRpcCheckbox: document.getElementById('discord-rpc-checkbox'),
             launchWithWindowsCheckbox: document.getElementById('launch-with-windows'),
             adaptiveFilterState: document.getElementById('adaptive-filter-state'),
+            adaptiveStatusRow:        document.getElementById('adaptive-status-row'),
+            adaptiveStatusText:       document.getElementById('adaptive-status-text'),
+            adaptiveStatusProfile:    document.getElementById('adaptive-status-profile'),
+            adaptiveAdvanced:         document.getElementById('adaptive-advanced'),
+            adaptiveAdvancedToggle:   document.getElementById('adaptive-advanced-toggle'),
+            adaptiveAdvancedBody:     document.getElementById('adaptive-advanced-body'),
+            adaptiveSpeechThreshold:  document.getElementById('adaptive-speech-threshold'),
+            adaptiveSpeechThresholdVal: document.getElementById('adaptive-speech-threshold-val'),
+            adaptiveMusicThreshold:   document.getElementById('adaptive-music-threshold'),
+            adaptiveMusicThresholdVal:document.getElementById('adaptive-music-threshold-val'),
+            adaptiveHysteresis:       document.getElementById('adaptive-hysteresis'),
+            adaptiveHysteresisVal:    document.getElementById('adaptive-hysteresis-val'),
+            adaptiveCooldown:         document.getElementById('adaptive-cooldown'),
+            adaptiveCooldownVal:      document.getElementById('adaptive-cooldown-val'),
+            adaptiveTransition:       document.getElementById('adaptive-transition'),
+            adaptiveTransitionVal:    document.getElementById('adaptive-transition-val'),
+            adaptiveManualOverride:   document.getElementById('adaptive-manual-override'),
+            adaptiveProfileGrid:      document.getElementById('adaptive-profile-grid'),
             
             // Delete Modal
             deleteModalOverlay: document.getElementById('delete-modal-overlay'),
@@ -211,8 +243,46 @@ class AudioEZApp {
             deleteModalNoBtn: document.getElementById('delete-modal-no'),
 
             // Credits
-            creditaudioez: document.getElementById('credit-audioez')
+            creditaudioez: document.getElementById('credit-audioez'),
+
+            // V1.1
+            clipIndicator:              document.getElementById('clip-indicator'),
+            newsBtn:                    document.getElementById('news-btn'),
+            undoBtn:                    document.getElementById('undo-btn'),
+            redoBtn:                    document.getElementById('redo-btn'),
+            abBtn:                      document.getElementById('ab-btn'),
+            abBtnLabel:                 document.getElementById('ab-btn-label'),
+            exportApoIncludeButton:     document.getElementById('export-apo-include-button'),
+            exportMoreBtn:              document.getElementById('export-more-btn'),
+            exportDropdown:             document.getElementById('export-dropdown'),
+            exportPngButton:            document.getElementById('export-png-button'),
+            safeModeCb:                 document.getElementById('safe-mode-checkbox'),
+            safeModeMaxSlider:          document.getElementById('safe-mode-max-slider'),
+            safeModeMaxValue:           document.getElementById('safe-mode-max-value'),
+            safeModeMaxLabel:           document.getElementById('safe-mode-max-label'),
+            changelogModal:             document.getElementById('changelog-modal'),
+            closeChangelogModal:        document.getElementById('close-changelog-modal'),
+            closeChangelogOk:           document.getElementById('close-changelog-ok'),
+            renameModal:                document.getElementById('rename-modal'),
+            renameInput:                document.getElementById('rename-input'),
+            renameModalOk:              document.getElementById('rename-modal-ok'),
+            renameModalCancel:          document.getElementById('rename-modal-cancel'),
+            resetEqBtn:                 document.getElementById('reset-eq-btn'),
+            renameConfigBtn:            document.getElementById('rename-config-btn'),
+            autoPreampBtn:              document.getElementById('auto-preamp-btn'),
+            tagConfigBtn:               document.getElementById('tag-config-btn'),
+            tagFilterSelect:            document.getElementById('tag-filter-select'),
+            tagModal:                   document.getElementById('tag-modal'),
+            tagModalTitle:              document.getElementById('tag-modal-title'),
+            tagModalSelect:             document.getElementById('tag-modal-select'),
+            tagModalOk:                 document.getElementById('tag-modal-ok'),
+            tagModalCancel:             document.getElementById('tag-modal-cancel')
         };
+
+        // Tag state - holds the current preset->tag map and active filter
+        this.presetTags = {};
+        this.activeTagFilter = "";
+        this.allConfigNames = [];
 
         this.canvas = this.elements.canvas;
         this.ctx = this.canvas?.getContext('2d');
@@ -246,12 +316,30 @@ class AudioEZApp {
         this.setupParameterEventListeners();
         this.setupAutoEQEventListeners();
         this.setupExportEventListeners();
+        this.setupV11EventListeners();
+        this.setupKeyboardShortcuts();
 
         document.querySelectorAll('input[type="radio"]').forEach(r => {
             r.addEventListener('change', () => {
                 r.style.display = 'none';
                 r.offsetHeight; // force reflow
                 r.style.display = '';
+            });
+        });
+
+        // Qt WebEngine doesn't always repaint CSS :checked transitions.
+        // Use a .checked class on the slider span to force visual update.
+        document.querySelectorAll('.switch input[type="checkbox"]').forEach(cb => {
+            const slider = cb.nextElementSibling;
+            if (!slider) return;
+            // Sync initial state
+            slider.classList.toggle('checked', cb.checked);
+            cb.addEventListener('change', () => {
+                slider.classList.toggle('checked', cb.checked);
+                // Force repaint
+                slider.style.display = 'none';
+                slider.offsetHeight;
+                slider.style.display = '';
             });
         });
     }
@@ -271,6 +359,7 @@ class AudioEZApp {
                     this.selectedPointIndex = -1;
                     this.hidePointParameters();
                 } else {
+                    this._pushHistory();
                     this.isDragging = true;
                     this.canvas.style.cursor = 'move';
                     this.selectedPointIndex = this.dragPointIndex;
@@ -294,12 +383,41 @@ class AudioEZApp {
             this.drawGraph();
         });
 
-        this.canvas.addEventListener('mousemove', (e) => {
-            if (!this.isDragging) return;
-            
-            const point = this.equalizerPoints.find(p => p.index === this.dragPointIndex);
+        this.canvas.addEventListener('wheel', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const hoverIndex = this.getPointIndex(x, y);
+
+            const targetIndex = hoverIndex !== -1 ? hoverIndex : this.selectedPointIndex;
+            if (targetIndex === -1) return;
+
+            e.preventDefault();
+            const point = this.equalizerPoints.find(p => p.index === targetIndex);
             if (!point) return;
 
+            this._pushHistory();
+            const step = e.shiftKey ? 0.1 : 0.5;
+            const delta = e.deltaY < 0 ? step : -step;
+            let newGain = point.gain + delta;
+            newGain = Math.min(Math.max(newGain, this.MIN_GAIN), this.MAX_GAIN);
+            newGain = parseFloat(newGain.toFixed(1));
+            point.gain = newGain;
+
+            if (this.py_channel) {
+                this.py_channel.setEqualizerPointParameter(targetIndex, 'gain', newGain);
+            }
+
+            if (targetIndex === this.selectedPointIndex) {
+                this.elements.pointGainSlider.value = newGain;
+                this.elements.pointGainValue.value = newGain;
+            }
+
+            this.updateCoefficients();
+            this.drawGraph();
+        }, { passive: false });
+
+        this.canvas.addEventListener('mousemove', (e) => {
             const rect = this.canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
@@ -307,16 +425,37 @@ class AudioEZApp {
             const paddedWidth = rect.width - 2 * padding;
             const paddedHeight = rect.height - 2 * padding;
 
+            // --- Tooltip: show freq + gain at cursor position ---
+            const tooltip = document.getElementById('graph-tooltip');
+            if (tooltip && !this.isDragging) {
+                let xNorm = (x - padding) / paddedWidth;
+                xNorm = Math.min(Math.max(xNorm, 0), 1);
+                const hoverLogFreq = this.LOG_MIN_FREQ + xNorm * (this.LOG_MAX_FREQ - this.LOG_MIN_FREQ);
+                const hoverFreq = Math.pow(10, hoverLogFreq);
+                const hoverGain = this.getSimulatedGain(hoverFreq);
+                const freqLabel = hoverFreq >= 1000 ? `${(hoverFreq / 1000).toFixed(1)} kHz` : `${Math.round(hoverFreq)} Hz`;
+                tooltip.textContent = `${freqLabel}  ${hoverGain >= 0 ? '+' : ''}${hoverGain.toFixed(1)} dB`;
+                tooltip.style.display = 'block';
+                tooltip.style.left = Math.min(x + 12, rect.width - tooltip.offsetWidth - 4) + 'px';
+                tooltip.style.top = Math.max(y - 28, 2) + 'px';
+            }
+
+            // --- Drag logic ---
+            if (!this.isDragging) return;
+
+            const point = this.equalizerPoints.find(p => p.index === this.dragPointIndex);
+            if (!point) return;
+
             let newGain = this.MAX_GAIN - ((y - padding) / paddedHeight) * (this.MAX_GAIN - this.MIN_GAIN);
             newGain = Math.min(Math.max(newGain, this.MIN_GAIN), this.MAX_GAIN);
             newGain = parseFloat(newGain.toFixed(1));
-            
-            let xNorm = (x - padding) / paddedWidth;
-            xNorm = Math.min(Math.max(xNorm, 0), 1);
-            const newLogFreq = this.LOG_MIN_FREQ + xNorm * (this.LOG_MAX_FREQ - this.LOG_MIN_FREQ);
+
+            let xNormDrag = (x - padding) / paddedWidth;
+            xNormDrag = Math.min(Math.max(xNormDrag, 0), 1);
+            const newLogFreq = this.LOG_MIN_FREQ + xNormDrag * (this.LOG_MAX_FREQ - this.LOG_MIN_FREQ);
             const newFreq = Math.pow(10, newLogFreq);
             const roundedFreq = Math.round(newFreq);
-            
+
             point.freq = roundedFreq;
             point.gain = newGain;
 
@@ -335,6 +474,11 @@ class AudioEZApp {
             this.updateCoefficients();
             this.drawGraph();
         });
+
+        this.canvas.addEventListener('mouseleave', () => {
+            const tooltip = document.getElementById('graph-tooltip');
+            if (tooltip) tooltip.style.display = 'none';
+        });
     }
 
     setupControlEventListeners() {
@@ -343,7 +487,10 @@ class AudioEZApp {
         // Preamp controls
         preampSlider.oninput = (e) => {
             preampValue.value = e.target.value;
-            if (this.py_channel) this.py_channel.setPreampGain(parseFloat(e.target.value));
+            if (this.py_channel) {
+                this.py_channel.setPreampGain(parseFloat(e.target.value));
+                this._notifyManualEqChange();
+            }
             this.updateCoefficients();
             this.drawGraph();
         };
@@ -351,7 +498,10 @@ class AudioEZApp {
         preampValue.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             preampSlider.value = value;
-            if (this.py_channel) this.py_channel.setPreampGain(value);
+            if (this.py_channel) {
+                this.py_channel.setPreampGain(value);
+                this._notifyManualEqChange();
+            }
             this.updateCoefficients();
             this.drawGraph();
         });
@@ -359,7 +509,10 @@ class AudioEZApp {
         // Bass controls
         bassSlider.oninput = (e) => {
             bassValue.value = e.target.value;
-            if (this.py_channel) this.py_channel.setBassGain(parseFloat(e.target.value));
+            if (this.py_channel) {
+                this.py_channel.setBassGain(parseFloat(e.target.value));
+                this._notifyManualEqChange();
+            }
             this.updateCoefficients();
             this.drawGraph();
         };
@@ -367,7 +520,10 @@ class AudioEZApp {
         bassValue.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             bassSlider.value = value;
-            if (this.py_channel) this.py_channel.setBassGain(value);
+            if (this.py_channel) {
+                this.py_channel.setBassGain(value);
+                this._notifyManualEqChange();
+            }
             this.updateCoefficients();
             this.drawGraph();
         });
@@ -375,7 +531,10 @@ class AudioEZApp {
         // Treble controls
         trebleSlider.oninput = (e) => {
             trebleValue.value = e.target.value;
-            if (this.py_channel) this.py_channel.setTrebleGain(parseFloat(e.target.value));
+            if (this.py_channel) {
+                this.py_channel.setTrebleGain(parseFloat(e.target.value));
+                this._notifyManualEqChange();
+            }
             this.updateCoefficients();
             this.drawGraph();
         };
@@ -383,7 +542,10 @@ class AudioEZApp {
         trebleValue.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             trebleSlider.value = value;
-            if (this.py_channel) this.py_channel.setTrebleGain(value);
+            if (this.py_channel) {
+                this.py_channel.setTrebleGain(value);
+                this._notifyManualEqChange();
+            }
             this.updateCoefficients();
             this.drawGraph();
         });
@@ -400,11 +562,10 @@ class AudioEZApp {
     }
 
     setupModalEventListeners() {
-        const { parametersBtn, parametersModal, closeParametersModalBtn, saveParametersBtn } = this.elements;
+        const { parametersBtn, parametersModal, closeParametersModalBtn } = this.elements;
 
         if (parametersBtn) {
             parametersBtn.addEventListener('click', () => {
-                console.log("Parameters button clicked");
                 parametersModal.classList.add('show');
             });
         }
@@ -415,24 +576,35 @@ class AudioEZApp {
             });
         }
 
-        if (saveParametersBtn) {
-            saveParametersBtn.addEventListener('click', () => {
-                const settings = {
-                    auto_launch: this.elements.readyOnStartupCheckbox.checked,
-                    detect_earphone: this.elements.detectEarphoneCheckbox.checked,
-                    persistent_state: this.elements.PersistentStateCheckbox.checked,
-                    discord_rpc: this.elements.discordRpcCheckbox.checked,
-                    launch_with_windows: this.elements.launchWithWindowsCheckbox.checked,
-                    default_target: this.elements.defaultTargetSelect.value,
-                    default_headphone: this.elements.defaultHeadphoneSelect.value,
-                    default_configuration: this.elements.defaultConfigurationSelect.value
-                };
-                
-                if (this.py_channel) {
-                    this.py_channel.saveSettings(JSON.stringify(settings));
-                }
+        // Map each input id → appSettings key + value reader
+        const settingMap = [
+            { id: 'ready-on-startup',          key: 'auto_launch',          read: el => el.checked },
+            { id: 'detect-earphone',            key: 'detect_earphone',      read: el => el.checked },
+            { id: 'persistent-state',           key: 'persistent_state',     read: el => el.checked },
+            { id: 'discord-rpc-checkbox',       key: 'discord_rpc',          read: el => el.checked },
+            { id: 'launch-with-windows',        key: 'launch_with_windows',  read: el => el.checked },
+            { id: 'adaptive-filter-state',      key: 'adaptive_filter',      read: el => el.checked },
+            { id: 'safe-mode-checkbox',         key: 'safe_mode',            read: el => el.checked },
+            { id: 'safe-mode-max-slider',       key: 'safe_mode_max_db',     read: el => parseFloat(el.value) },
+            { id: 'safe-mode-max-value',        key: 'safe_mode_max_db',     read: el => parseFloat(el.value) },
+            { id: 'default-target-select',      key: 'default_target',       read: el => el.value },
+            { id: 'default-headphone-select',   key: 'default_headphone',    read: el => el.value },
+            { id: 'default-configuration-select', key: 'default_configuration', read: el => el.value },
+        ];
+
+        settingMap.forEach(({ id, key, read }) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('change', () => {
+                // 1. Update appSettings immediately — prevents round-trip from reverting
+                if (this.appSettings) this.appSettings[key] = read(el);
+                // 2. Persist to Python + show feedback
+                setTimeout(() => {
+                    this.saveSettingsToPython();
+                    this.showToast('Settings saved.', 'success', 1500);
+                }, 50);
             });
-        }
+        });
     }
 
     setupConfigEventListeners() {
@@ -474,6 +646,7 @@ class AudioEZApp {
         };
 
         exportAllConfigsButton.onclick = () => {
+            if (this.elements.exportDropdown) this.elements.exportDropdown.classList.remove('open');
             if (this.py_channel) this.py_channel.exportAllConfigs();
         };
         
@@ -499,7 +672,7 @@ class AudioEZApp {
     }
 
     setupParameterEventListeners() {
-        const { parametersBtn, parametersModal, closeParametersModalBtn, saveParametersBtn, pointBandsValueInput, pointGainSlider, pointGainValue, pointFreqSlider, pointFreqValue, pointQSlider, pointQValue, typeListSelect } = this.elements;
+        const { parametersBtn, parametersModal, closeParametersModalBtn, pointBandsValueInput, pointGainSlider, pointGainValue, pointFreqSlider, pointFreqValue, pointQSlider, pointQValue, typeListSelect } = this.elements;
 
         pointBandsValueInput.addEventListener('change', (event) => {
             let newCount = parseInt(event.target.value);
@@ -562,30 +735,9 @@ class AudioEZApp {
             }
         });
 
-        if (parametersBtn) {
-            parametersBtn.addEventListener('click', () => {
-                parametersModal.style.display = 'block';
-                //this.loadSettingsFromPython();
-            });
-        }
-
         if (closeParametersModalBtn) {
             closeParametersModalBtn.addEventListener('click', () => {
-                parametersModal.style.display = 'none';
-            });
-        }
-
-        if (saveParametersBtn) {
-            saveParametersBtn.addEventListener('click', () => {
-                this.saveSettingsToPython();
-                parametersModal.style.display = 'none';
-            });
-        }
-
-        const closeModalFooterBtn = document.getElementById('close-modal-footer-btn');
-        if (closeModalFooterBtn) {
-            closeModalFooterBtn.addEventListener('click', () => {
-                parametersModal.style.display = 'none';
+                parametersModal.classList.remove('show');
             });
         }
     }
@@ -643,18 +795,27 @@ class AudioEZApp {
         if (!this.py_channel) return;
 
         const settings = {
-            auto_launch: this.elements.readyOnStartupCheckbox.checked,
-            detect_earphone: this.elements.detectEarphoneCheckbox.checked,
-            persistent_state: this.elements.PersistentStateCheckbox.checked,
-            discord_rpc: this.elements.discordRpcCheckbox.checked,
-            launch_with_windows: this.elements.launchWithWindowsCheckbox.checked,
-            default_target: this.elements.defaultTargetSelect.value,
-            default_headphone: this.elements.defaultHeadphoneSelect.value,
-            default_configuration: this.elements.defaultConfigurationSelect.value,
-            adaptive_filter: this.elements.adaptiveFilterState.checked
+            auto_launch:            this.elements.readyOnStartupCheckbox?.checked   ?? false,
+            detect_earphone:        this.elements.detectEarphoneCheckbox?.checked   ?? false,
+            persistent_state:       this.elements.PersistentStateCheckbox?.checked  ?? false,
+            discord_rpc:            this.elements.discordRpcCheckbox?.checked       ?? false,
+            launch_with_windows:    this.elements.launchWithWindowsCheckbox?.checked ?? false,
+            adaptive_filter:        this.elements.adaptiveFilterState?.checked      ?? false,
+            adaptive_config:        this._collectAdaptiveConfigFromUi(),
+            default_target:         this.elements.defaultTargetSelect?.value        ?? '',
+            default_headphone:      this.elements.defaultHeadphoneSelect?.value     ?? '',
+            default_configuration:  this.elements.defaultConfigurationSelect?.value ?? 'Default',
+            safe_mode:              this.elements.safeModeCb?.checked               ?? false,
+            safe_mode_max_db:       parseFloat(this.elements.safeModeMaxSlider?.value ?? 12)
         };
 
         this.py_channel.saveSettings(JSON.stringify(settings));
+
+        // Hot-push the adaptive config to RTGD without needing a restart.
+        if (this.py_channel.setAdaptiveConfig) {
+            try { this.py_channel.setAdaptiveConfig(JSON.stringify(settings.adaptive_config)); }
+            catch (e) { /* not available */ }
+        }
     }
 
     populateDropdown(id, items, selectedValue = null) {
@@ -735,7 +896,8 @@ class AudioEZApp {
     setupExportEventListeners() {
         const { 
             exportConfigButton, closeExportModalBtn, closeModalFooterBtn, 
-            generateExportBtn, exportFormatRadios 
+            generateExportBtn, exportFormatRadios,
+            exportMoreBtn, exportDropdown, exportPngButton
         } = this.elements;
 
         exportFormatRadios.forEach(radio => {
@@ -743,9 +905,40 @@ class AudioEZApp {
         });
 
         if (exportConfigButton) exportConfigButton.addEventListener('click', () => this.showExportModal());
-        closeExportModalBtn.addEventListener('click', () => this.hideExportModal());
-        closeModalFooterBtn.addEventListener('click', () => this.hideExportModal());
-        generateExportBtn.addEventListener('click', () => this.generateExport());
+        if (closeExportModalBtn) closeExportModalBtn.addEventListener('click', () => this.hideExportModal());
+        if (closeModalFooterBtn) closeModalFooterBtn.addEventListener('click', () => this.hideExportModal());
+        if (generateExportBtn) generateExportBtn.addEventListener('click', () => this.generateExport());
+
+        // Export dropdown toggle — uses fixed positioning to escape overflow:hidden parents
+        if (exportMoreBtn && exportDropdown) {
+            exportMoreBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = exportDropdown.classList.contains('open');
+                exportDropdown.classList.remove('open');
+                if (!isOpen) {
+                    const rect = exportMoreBtn.getBoundingClientRect();
+                    // Open above the button
+                    exportDropdown.style.right = (window.innerWidth - rect.right) + 'px';
+                    exportDropdown.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+                    exportDropdown.style.left = 'auto';
+                    exportDropdown.style.top = 'auto';
+                    exportDropdown.classList.add('open');
+                }
+            });
+            document.addEventListener('click', (e) => {
+                if (!exportDropdown.contains(e.target) && e.target !== exportMoreBtn) {
+                    exportDropdown.classList.remove('open');
+                }
+            });
+        }
+
+        // PNG export
+        if (exportPngButton) {
+            exportPngButton.addEventListener('click', () => {
+                if (exportDropdown) exportDropdown.classList.remove('open');
+                this.exportGraphAsPng();
+            });
+        }
     }
 
     setupWebChannel() {
@@ -783,6 +976,20 @@ class AudioEZApp {
                 if (this.py_channel) {
                     this.py_channel.toggleAdaptiveFilter(event.target.checked);
                 }
+                this._updateAdaptiveUiVisibility(event.target.checked);
+            });
+        }
+
+        // Wire all adaptive advanced controls (idempotent — only attach once).
+        this._setupAdaptiveAdvancedControls();
+
+        // Live status from RTGD.
+        if (this.py_channel.adaptiveStatusUpdate) {
+            this.py_channel.adaptiveStatusUpdate.connect((statusJson) => {
+                try {
+                    const status = JSON.parse(statusJson);
+                    this._renderAdaptiveStatus(status);
+                } catch (e) { /* swallow malformed */ }
             });
         }
 
@@ -813,9 +1020,11 @@ class AudioEZApp {
         });
 
         this.py_channel.statusUpdate.connect(status => {
-            this.elements.statusMessage.textContent = status;
-            const selectedText = this.elements.configListSelect.options[this.elements.configListSelect.selectedIndex].text;
-            this.py_channel.update_presence_discord(`${status}`, `Profile ${selectedText}`);
+            this.showToast(status, 'info');
+            const config = this.elements.configListSelect.options[this.elements.configListSelect.selectedIndex]?.text || 'Default';
+            const hp = this.pendingHeadphoneName || this.appSettings?.default_headphone || '';
+            const details = hp && hp !== 'None' ? `${hp}` : `Config: ${config}`;
+            if (this.py_channel) this.py_channel.update_presence_discord(status, details);
         });
 
         this.py_channel.frequencyResponseUpdate.connect((freqs, bands, gains, qValues, filterTypes) => {
@@ -845,37 +1054,54 @@ class AudioEZApp {
         this.py_channel.preampGainChanged.connect(gain => {
             this.elements.preampSlider.value = gain;
             this.elements.preampValue.value = gain;
+            this.updateCoefficients();
+            this.drawGraph();
         });
 
         this.py_channel.bassGainChanged.connect(gain => {
             this.elements.bassSlider.value = gain;
             this.elements.bassValue.value = gain;
+            this.updateCoefficients();
+            this.drawGraph();
         });
 
         this.py_channel.trebleGainChanged.connect(gain => {
             this.elements.trebleSlider.value = gain;
             this.elements.trebleValue.value = gain;
+            this.updateCoefficients();
+            this.drawGraph();
         });
 
         this.py_channel.playbackStateChanged.connect(isPlaying => {
             this.elements.toggleButton.textContent = isPlaying ? 'Stop' : 'Start';
             this.elements.toggleButton.className = isPlaying ? 'btn btn-danger' : 'btn btn-primary';
-            this.elements.statusMessage.textContent = isPlaying ? 'Equalizer active.' : 'Equalizer disabled.';
+            this.showToast(isPlaying ? 'Equalizer active.' : 'Equalizer disabled.', isPlaying ? 'success' : 'info', 2000);
+            if (this.py_channel) {
+                const hp = this.pendingHeadphoneName || this.appSettings?.default_headphone || '';
+                const bands = this.equalizerPoints.length;
+                const state = isPlaying ? '🎧 EQ Active' : '⏸ EQ Disabled';
+                const details = hp && hp !== 'None' ? `${hp} · ${bands} bands` : `${bands} bands`;
+                this.py_channel.update_presence_discord(state, details);
+            }
         });
 
         this.py_channel.configListUpdate.connect((configList, activeConfig) => {
-            this.elements.configListSelect.innerHTML = '';
-            configList.forEach(name => {
-                const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name;
-                if (name === activeConfig) {
-                    option.selected = true;
-                }
-                this.elements.configListSelect.appendChild(option);
-            });
-            this.elements.configStatusLabel.textContent = `Config: ${activeConfig}`;
-            this.py_channel.update_presence_discord(`${this.elements.statusMessage.textContent}`, `Profile ${activeConfig}`);
+            this.allConfigNames = configList.slice();
+            // Pull tags from python so the UI is always in sync
+            try {
+                this.py_channel.getPresetTags && this.py_channel.getPresetTags(json => {
+                    try { this.presetTags = JSON.parse(json) || {}; }
+                    catch (e) { this.presetTags = {}; }
+                    this._renderConfigList(activeConfig);
+                });
+            } catch (e) {
+                this._renderConfigList(activeConfig);
+            }
+            if (this.py_channel) {
+                const hp = this.pendingHeadphoneName || this.appSettings?.default_headphone || '';
+                const state = hp && hp !== 'None' ? `🎧 ${hp}` : '🎧 AudioEZ';
+                this.py_channel.update_presence_discord(state, `Preset: ${activeConfig}`);
+            }
         });
 
         this.py_channel.settingsUpdated.connect((settingsJson) => {
@@ -936,23 +1162,20 @@ class AudioEZApp {
                 }
             }
 
-        if (optionExists) {
-            targetList.value = defaultTarget;
-                        
-            let targetData = null;
-            
-            targetData = this.autoEqDb.find(e => e.name === defaultTarget);
-            
-            if (!targetData) {
-                targetData = { name: defaultTarget }; 
-            }
-            
-            this.selectedtarget = targetData; 
-            
-            if (this.py_channel) {
-                this.py_channel.fetchCurve(defaultTarget);
-            }
-        } else {
+            if (optionExists) {
+                targetList.value = defaultTarget;
+
+                let targetData = this.autoEqDb.find(e => e.name === defaultTarget);
+                if (!targetData) {
+                    targetData = { name: defaultTarget };
+                }
+
+                this.selectedtarget = targetData;
+
+                if (this.py_channel) {
+                    this.py_channel.fetchCurve(defaultTarget);
+                }
+            } else {
                 console.warn(`Default target not found: ${defaultTarget}`);
             }
         }
@@ -988,19 +1211,55 @@ class AudioEZApp {
         }
     }
 
+    _renderConfigList(activeConfig) {
+        const select = this.elements.configListSelect;
+        if (!select) return;
+        const filter = this.activeTagFilter || "";
+        select.innerHTML = '';
+        const names = this.allConfigNames || [];
+        names.forEach(name => {
+            // Always show "Default", and apply tag filter to the rest
+            if (filter && name !== "Default") {
+                const tag = this.presetTags?.[name] || "";
+                if (tag !== filter) return;
+            }
+            const option = document.createElement('option');
+            option.value = name;
+            const tag = this.presetTags?.[name];
+            option.textContent = tag ? `${name}  [${tag}]` : name;
+            if (name === activeConfig) option.selected = true;
+            select.appendChild(option);
+        });
+        // If active wasn't in the filtered set, fall back to first option
+        if (!select.value && select.options.length > 0) {
+            select.selectedIndex = 0;
+        }
+    }
+
     updatePointParameter(param, value) {
         if (this.selectedPointIndex === -1) return;
         const point = this.equalizerPoints.find(p => p.index === this.selectedPointIndex);
         if (!point) return;
 
+        this._pushHistory();
         point[param] = value;
 
         if (this.py_channel) {
             this.py_channel.setEqualizerPointParameter(this.selectedPointIndex, param, value);
+            this._notifyManualEqChange();
         }
 
         this.updateCoefficients();
         this.drawGraph();
+    }
+
+    _notifyManualEqChange() {
+        // Throttled ping to RTGD so it pauses adaptive switches when the user touches the EQ.
+        if (!this.py_channel || !this.py_channel.notifyManualEqChange) return;
+        const now = Date.now();
+        if (this._lastManualOverrideNotify && (now - this._lastManualOverrideNotify) < 500) return;
+        this._lastManualOverrideNotify = now;
+        try { this.py_channel.notifyManualEqChange(); } catch (e) { /* ignore */ }
     }
 
     updateEqualizerBands(newBandCount) {
@@ -1026,6 +1285,9 @@ class AudioEZApp {
         if (this.elements.pointBandsValueInput) {
             this.elements.pointBandsValueInput.value = this.equalizerPoints.length;
         }
+
+        // Sync band count to Python engine
+        if (this.py_channel) this.py_channel.resizeBands(this.equalizerPoints.length);
 
         this.updateCoefficients();
         this.drawGraph();
@@ -1194,6 +1456,30 @@ class AudioEZApp {
         }
     }
 
+    exportGraphAsPng() {
+        if (!this.canvas) return;
+        try {
+            // Draw on a white-background copy so the PNG is readable on light backgrounds
+            const offscreen = document.createElement('canvas');
+            offscreen.width  = this.canvas.width;
+            offscreen.height = this.canvas.height;
+            const octx = offscreen.getContext('2d');
+            octx.fillStyle = '#0d121c';
+            octx.fillRect(0, 0, offscreen.width, offscreen.height);
+            octx.drawImage(this.canvas, 0, 0);
+
+            const link = document.createElement('a');
+            const configName = this.elements.configListSelect?.value || 'AudioEZ';
+            link.download = `${configName}_EQ.png`;
+            link.href = offscreen.toDataURL('image/png');
+            link.click();
+            this.showToast('Graph saved as PNG.', 'success', 2000);
+        } catch (e) {
+            this.showToast('PNG export failed.', 'error', 3000);
+            console.error('[PNG Export]', e);
+        }
+    }
+
     showExportModal() {
         this.elements.exportModal.style.visibility = 'visible';
         this.elements.exportModal.style.opacity = '1';
@@ -1201,6 +1487,11 @@ class AudioEZApp {
         this.elements.profileNameInput.value = (this.selectedheadphone && this.selectedtarget) ?
             `${this.selectedheadphone.name} - ${this.selectedtarget.name}` :
             'New configuration';
+
+        // Default export band count to 0 (= keep current)
+        if (this.elements.exportTargetBands) {
+            this.elements.exportTargetBands.value = 0;
+        }
 
         this.toggleGraphicOptions();
         this.elements.warningMessage.style.display = 'none';
@@ -1264,9 +1555,12 @@ class AudioEZApp {
                 return;
         }
 
+        const targetBands = parseInt(this.elements.exportTargetBands?.value) || 0;
+
         const exportData = {
             suggestedFileName: profileName + extension,
-            exportType: formatValue
+            exportType: formatValue,
+            targetBands: targetBands
         };
 
         if (this.py_channel && this.py_channel.exportConfig) {
@@ -1589,43 +1883,69 @@ class AudioEZApp {
     updateSettings(settings) {
         console.log("Updating UI with settings:", settings);
         
+        const isInitialLoad = !this._settingsLoaded;
         this.appSettings = settings;
-        
-        // Vérifier que les éléments existent avant de les manipuler
-        if (this.elements.detectEarphoneCheckbox) {
-            this.elements.detectEarphoneCheckbox.checked = settings.detect_earphone || false;
+        if (isInitialLoad) {
+            this._settingsLoaded = true;
+            this._maybeShowChangelog();
         }
-        if (this.elements.readyOnStartupCheckbox) {
-            this.elements.readyOnStartupCheckbox.checked = settings.auto_launch || false;
-        }
-        if (this.elements.discordRpcCheckbox) {
-            this.elements.discordRpcCheckbox.checked = settings.discord_rpc || false;
-        }
-        if (this.elements.launchWithWindowsCheckbox) {
-            this.elements.launchWithWindowsCheckbox.checked = settings.launch_with_windows || false;
-        }
-        if (this.elements.adaptiveFilterState) {
-            this.elements.adaptiveFilterState.checked = settings.adaptive_filter || false;
-            if (this.elements.adaptiveFilterState.checked === true) {
-                this.showSimpleModal("Adaptive Filter has been enable. Please restart the application to apply changes.");
+
+        // Skip updating modal elements if the modal is open — the user is actively
+        // editing and the round-trip should NOT revert their in-progress changes
+        const modalOpen = this.elements.parametersModal?.classList.contains('show');
+        if (!modalOpen) {
+            if (this.elements.detectEarphoneCheckbox)
+                this.elements.detectEarphoneCheckbox.checked = settings.detect_earphone ?? false;
+            if (this.elements.readyOnStartupCheckbox)
+                this.elements.readyOnStartupCheckbox.checked = settings.auto_launch ?? false;
+            if (this.elements.discordRpcCheckbox)
+                this.elements.discordRpcCheckbox.checked = settings.discord_rpc ?? false;
+            if (this.elements.launchWithWindowsCheckbox)
+                this.elements.launchWithWindowsCheckbox.checked = settings.launch_with_windows ?? false;
+            if (this.elements.PersistentStateCheckbox)
+                this.elements.PersistentStateCheckbox.checked = settings.persistent_state ?? false;
+            if (this.elements.adaptiveFilterState) {
+                const wasChecked = this.elements.adaptiveFilterState.checked;
+                this.elements.adaptiveFilterState.checked = settings.adaptive_filter ?? false;
+                if (!wasChecked && this.elements.adaptiveFilterState.checked) {
+                    this.showSimpleModal("Adaptive Filter has been enabled. Please restart the application to apply changes.");
+                }
+                // Reflect the saved adaptive_config block into the advanced UI.
+                if (settings.adaptive_config) {
+                    this._applyAdaptiveConfigToUi(settings.adaptive_config);
+                }
+                this._updateAdaptiveUiVisibility(this.elements.adaptiveFilterState.checked);
+            }
+            if (this.elements.safeModeCb)
+                this.elements.safeModeCb.checked = settings.safe_mode ?? false;
+            if (this.elements.safeModeMaxSlider && settings.safe_mode_max_db != null) {
+                this.elements.safeModeMaxSlider.value = settings.safe_mode_max_db;
+                if (this.elements.safeModeMaxValue) this.elements.safeModeMaxValue.value = settings.safe_mode_max_db;
+                if (this.elements.safeModeMaxLabel) this.elements.safeModeMaxLabel.textContent = settings.safe_mode_max_db;
             }
         }
 
-        if (settings.default_target && this.elements.targetSelect) {
+        // Sync .checked class on all switch sliders for Qt WebEngine repaint
+        this._syncSwitchSliders();
+
+        if (settings.default_target && this.elements.targetSelect)
             this.elements.targetSelect.value = settings.default_target;
-            
-            if (this.py_channel && typeof this.py_channel.fetchCurve === 'function') {
-                this.py_channel.fetchCurve(settings.default_target);
-            }
-        }
-
-        if (settings.default_headphone && this.elements.defaultHeadphoneSelect) {
+        if (settings.default_headphone && this.elements.defaultHeadphoneSelect)
             this.elements.defaultHeadphoneSelect.value = settings.default_headphone;
-        }
-        
-        if (settings.default_configuration && this.elements.defaultConfigurationSelect) {
+        if (settings.default_configuration && this.elements.defaultConfigurationSelect)
             this.elements.defaultConfigurationSelect.value = settings.default_configuration;
-        }
+    }
+
+    _syncSwitchSliders() {
+        document.querySelectorAll('.switch input[type="checkbox"]').forEach(cb => {
+            const slider = cb.nextElementSibling;
+            if (slider) {
+                slider.classList.toggle('checked', cb.checked);
+                slider.style.display = 'none';
+                slider.offsetHeight;
+                slider.style.display = '';
+            }
+        });
     }
 
     on_load_finished(ok) {
@@ -1644,6 +1964,550 @@ class AudioEZApp {
                 }, 1000);
             }
         }
+    }
+
+    // =====================================================================
+    // V1.1 — Toast, Undo/Redo, Clip, A/B, Rename, Safe Mode, Changelog
+    // =====================================================================
+
+    showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => toast.classList.add('toast-show'));
+        });
+        setTimeout(() => {
+            toast.classList.remove('toast-show');
+            toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+        }, duration);
+    }
+
+    _snapshotState() {
+        return {
+            points: this.equalizerPoints.map(p => ({ ...p })),
+            preamp: parseFloat(this.elements.preampSlider.value),
+            bass:   parseFloat(this.elements.bassSlider.value),
+            treble: parseFloat(this.elements.trebleSlider.value)
+        };
+    }
+
+    _pushHistory() {
+        if (this._historyPaused) return;
+        this._undoStack.push(this._snapshotState());
+        if (this._undoStack.length > 50) this._undoStack.shift();
+        this._redoStack = [];
+    }
+
+    _applySnapshot(snap) {
+        this._historyPaused = true;
+        this.equalizerPoints = snap.points.map(p => ({ ...p }));
+        this.elements.preampSlider.value = snap.preamp;
+        this.elements.preampValue.value  = snap.preamp;
+        this.elements.bassSlider.value   = snap.bass;
+        this.elements.bassValue.value    = snap.bass;
+        this.elements.trebleSlider.value = snap.treble;
+        this.elements.trebleValue.value  = snap.treble;
+        if (this.py_channel) {
+            this.py_channel.setPreampGain(snap.preamp);
+            this.py_channel.setBassGain(snap.bass);
+            this.py_channel.setTrebleGain(snap.treble);
+            snap.points.forEach(p => {
+                this.py_channel.setEqualizerPointParameter(p.index, 'gain', p.gain);
+                this.py_channel.setEqualizerPointParameter(p.index, 'freq', p.freq);
+                this.py_channel.setEqualizerPointParameter(p.index, 'q',    p.q);
+                this.py_channel.setEqualizerPointParameter(p.index, 'type', this.filterTypeCodes[p.type] ?? 0);
+            });
+        }
+        this.updateCoefficients();
+        this.drawGraph();
+        this._historyPaused = false;
+    }
+
+    undo() {
+        if (!this._undoStack.length) { this.showToast('Nothing to undo.', 'info', 1500); return; }
+        this._redoStack.push(this._snapshotState());
+        this._applySnapshot(this._undoStack.pop());
+        this.showToast('Undo', 'info', 1200);
+    }
+
+    redo() {
+        if (!this._redoStack.length) { this.showToast('Nothing to redo.', 'info', 1500); return; }
+        this._undoStack.push(this._snapshotState());
+        this._applySnapshot(this._redoStack.pop());
+        this.showToast('Redo', 'info', 1200);
+    }
+
+    _checkClip() {
+        if (!this.equalizerPoints.length) return;
+        const maxGain = Math.max(
+            ...this.equalizerPoints.map(p => p.gain),
+            parseFloat(this.elements.bassSlider.value) || 0,
+            parseFloat(this.elements.trebleSlider.value) || 0
+        );
+        const preamp = parseFloat(this.elements.preampSlider.value) || 0;
+        const clipping = (preamp + maxGain) > 0;
+        if (this.elements.clipIndicator) {
+            this.elements.clipIndicator.classList.toggle('visible', clipping);
+        }
+    }
+
+    _abToggle() {
+        if (!this._abSlotA) {
+            this._abSlotA = this._snapshotState();
+            this._abActive = false;
+            this.elements.abBtnLabel.textContent = 'A/B: A saved';
+            this.elements.abBtn.classList.add('ab-active');
+            this.showToast('A/B: reference saved. Click again to compare.', 'info');
+            return;
+        }
+        if (!this._abActive) {
+            this._abSlotB = this._snapshotState();
+            this._applySnapshot(this._abSlotA);
+            this._abActive = true;
+            this.elements.abBtnLabel.textContent = 'A/B: showing A';
+        } else {
+            this._applySnapshot(this._abSlotB);
+            this._abActive = false;
+            this.elements.abBtnLabel.textContent = 'A/B: showing B';
+        }
+    }
+
+    _abReset() {
+        this._abSlotA = null;
+        this._abSlotB = null;
+        this._abActive = false;
+        this.elements.abBtnLabel.textContent = 'A/B: off';
+        this.elements.abBtn.classList.remove('ab-active');
+        this.showToast('A/B reset.', 'info', 1500);
+    }
+
+    _openRenameModal(currentName) {
+        const { renameModal, renameInput, renameModalOk, renameModalCancel } = this.elements;
+        renameInput.value = currentName;
+        renameModal.classList.add('show');
+        renameInput.focus();
+        renameInput.select();
+
+        const doRename = () => {
+            const newName = renameInput.value.trim();
+            renameModal.classList.remove('show');
+            if (!newName || newName === currentName) { cleanup(); return; }
+            if (this.py_channel) this.py_channel.renameConfig(currentName, newName);
+            cleanup();
+        };
+        const doCancel = () => { renameModal.classList.remove('show'); cleanup(); };
+        const onKey = (e) => {
+            if (e.key === 'Enter')  doRename();
+            if (e.key === 'Escape') doCancel();
+        };
+        const cleanup = () => {
+            renameModalOk.removeEventListener('click', doRename);
+            renameModalCancel.removeEventListener('click', doCancel);
+            renameInput.removeEventListener('keydown', onKey);
+        };
+        renameModalOk.addEventListener('click', doRename);
+        renameModalCancel.addEventListener('click', doCancel);
+        renameInput.addEventListener('keydown', onKey);
+    }
+
+    // ========================================================================
+    //  Adaptive Filter — advanced UI wiring
+    // ========================================================================
+
+    _adaptiveProfileList() {
+        return ["Speech", "Movie", "Music", "Electronic", "Rock", "Pop",
+                "Classical", "Hip-Hop", "Jazz", "Singing", "Ambient", "Acoustic"];
+    }
+
+    _setupAdaptiveAdvancedControls() {
+        if (this._adaptiveAdvancedWired) return;
+        this._adaptiveAdvancedWired = true;
+
+        const e = this.elements;
+
+        // Collapsible toggle
+        if (e.adaptiveAdvancedToggle) {
+            e.adaptiveAdvancedToggle.addEventListener('click', () => {
+                const body = e.adaptiveAdvancedBody;
+                if (!body) return;
+                const open = body.style.display !== 'none';
+                body.style.display = open ? 'none' : 'flex';
+                e.adaptiveAdvancedToggle.textContent =
+                    open ? 'Advanced parameters ▾' : 'Advanced parameters ▴';
+            });
+        }
+
+        // Sliders — bind label updates and debounce save
+        const sliderBindings = [
+            [e.adaptiveSpeechThreshold, e.adaptiveSpeechThresholdVal, v => v.toFixed(2)],
+            [e.adaptiveMusicThreshold,  e.adaptiveMusicThresholdVal,  v => v.toFixed(2)],
+            [e.adaptiveHysteresis,      e.adaptiveHysteresisVal,      v => `${v.toFixed(1)}s`],
+            [e.adaptiveCooldown,        e.adaptiveCooldownVal,        v => `${v.toFixed(1)}s`],
+            [e.adaptiveTransition,      e.adaptiveTransitionVal,      v => `${v.toFixed(1)}s`],
+        ];
+        sliderBindings.forEach(([slider, label, fmt]) => {
+            if (!slider) return;
+            slider.addEventListener('input', () => {
+                if (label) label.textContent = fmt(parseFloat(slider.value));
+                this._scheduleAdaptiveSave();
+            });
+        });
+
+        if (e.adaptiveManualOverride) {
+            e.adaptiveManualOverride.addEventListener('change', () => this._scheduleAdaptiveSave());
+        }
+
+        // Build the profile chips grid
+        if (e.adaptiveProfileGrid && !e.adaptiveProfileGrid.children.length) {
+            this._adaptiveProfileList().forEach(name => {
+                const chip = document.createElement('label');
+                chip.className = 'adaptive-profile-chip active';
+                chip.dataset.profile = name;
+                chip.innerHTML = `<input type="checkbox" checked> <span>${name}</span>`;
+                const cb = chip.querySelector('input');
+                cb.addEventListener('change', () => {
+                    chip.classList.toggle('active', cb.checked);
+                    this._scheduleAdaptiveSave();
+                });
+                e.adaptiveProfileGrid.appendChild(chip);
+            });
+        }
+    }
+
+    _scheduleAdaptiveSave() {
+        clearTimeout(this._adaptiveSaveTimer);
+        this._adaptiveSaveTimer = setTimeout(() => this.saveSettingsToPython(), 350);
+    }
+
+    _collectAdaptiveConfigFromUi() {
+        const e = this.elements;
+        const enabled = [];
+        if (e.adaptiveProfileGrid) {
+            e.adaptiveProfileGrid.querySelectorAll('.adaptive-profile-chip').forEach(chip => {
+                const cb = chip.querySelector('input');
+                if (cb && cb.checked) enabled.push(chip.dataset.profile);
+            });
+        }
+        return {
+            speech_threshold:        parseFloat(e.adaptiveSpeechThreshold?.value ?? 0.6),
+            music_genre_threshold:   parseFloat(e.adaptiveMusicThreshold?.value  ?? 0.4),
+            hysteresis_delay:        parseFloat(e.adaptiveHysteresis?.value      ?? 8),
+            cooldown_period:         parseFloat(e.adaptiveCooldown?.value        ?? 12),
+            transition_duration:     parseFloat(e.adaptiveTransition?.value      ?? 1.5),
+            manual_override_pause:   e.adaptiveManualOverride?.checked ?? true,
+            enabled_profiles:        enabled.length ? enabled : null,
+        };
+    }
+
+    _applyAdaptiveConfigToUi(cfg) {
+        if (!cfg) return;
+        const e = this.elements;
+        const setSlider = (el, label, value, fmt) => {
+            if (el && value != null) {
+                el.value = value;
+                if (label) label.textContent = fmt(parseFloat(value));
+            }
+        };
+        setSlider(e.adaptiveSpeechThreshold, e.adaptiveSpeechThresholdVal, cfg.speech_threshold,        v => v.toFixed(2));
+        setSlider(e.adaptiveMusicThreshold,  e.adaptiveMusicThresholdVal,  cfg.music_genre_threshold,   v => v.toFixed(2));
+        setSlider(e.adaptiveHysteresis,      e.adaptiveHysteresisVal,      cfg.hysteresis_delay,        v => `${v.toFixed(1)}s`);
+        setSlider(e.adaptiveCooldown,        e.adaptiveCooldownVal,        cfg.cooldown_period,         v => `${v.toFixed(1)}s`);
+        setSlider(e.adaptiveTransition,      e.adaptiveTransitionVal,      cfg.transition_duration,     v => `${v.toFixed(1)}s`);
+        if (e.adaptiveManualOverride && cfg.manual_override_pause != null) {
+            e.adaptiveManualOverride.checked = !!cfg.manual_override_pause;
+        }
+        if (e.adaptiveProfileGrid && cfg.enabled_profiles) {
+            const set = new Set(cfg.enabled_profiles);
+            e.adaptiveProfileGrid.querySelectorAll('.adaptive-profile-chip').forEach(chip => {
+                const on = set.has(chip.dataset.profile);
+                const cb = chip.querySelector('input');
+                if (cb) cb.checked = on;
+                chip.classList.toggle('active', on);
+            });
+        }
+    }
+
+    _updateAdaptiveUiVisibility(enabled) {
+        const e = this.elements;
+        if (e.adaptiveStatusRow)  e.adaptiveStatusRow.style.display  = enabled ? 'flex' : 'none';
+        if (e.adaptiveAdvanced)   e.adaptiveAdvanced.style.display   = enabled ? 'block' : 'none';
+        if (!enabled && e.adaptiveAdvancedBody) {
+            e.adaptiveAdvancedBody.style.display = 'none';
+            if (e.adaptiveAdvancedToggle)
+                e.adaptiveAdvancedToggle.textContent = 'Advanced parameters ▾';
+        }
+    }
+
+    _renderAdaptiveStatus(status) {
+        const e = this.elements;
+        if (!e.adaptiveStatusRow) return;
+        const detection = status?.detection || 'idle';
+        const confidence = (status?.confidence != null) ? Math.round(status.confidence * 100) : null;
+        const profile = status?.profile || 'default';
+        const paused = !!status?.paused;
+
+        e.adaptiveStatusRow.classList.toggle('paused', paused);
+        if (e.adaptiveStatusText) {
+            const label = paused
+                ? `Paused — ${detection}`
+                : (confidence != null ? `${detection} · ${confidence}%` : detection);
+            e.adaptiveStatusText.textContent = label;
+        }
+        if (e.adaptiveStatusProfile) {
+            e.adaptiveStatusProfile.textContent = profile === 'default' ? '—' : profile;
+        }
+    }
+
+    _openTagPicker(presetName) {
+        const { tagModal, tagModalTitle, tagModalSelect, tagModalOk, tagModalCancel } = this.elements;
+        if (!tagModal || !tagModalSelect) return;
+        tagModalTitle.textContent = `Tag preset "${presetName}":`;
+        tagModalSelect.value = this.presetTags?.[presetName] || "";
+        tagModal.classList.add('show');
+
+        const doApply = () => {
+            const tag = tagModalSelect.value || "";
+            tagModal.classList.remove('show');
+            if (this.py_channel && this.py_channel.setPresetTag) {
+                this.py_channel.setPresetTag(presetName, tag);
+            }
+            // Optimistically update local cache so the UI reflects it instantly
+            if (tag) this.presetTags[presetName] = tag;
+            else delete this.presetTags[presetName];
+            this._renderConfigList(this.elements.configListSelect.value);
+            cleanup();
+        };
+        const doCancel = () => { tagModal.classList.remove('show'); cleanup(); };
+        const onKey = (e) => {
+            if (e.key === 'Enter')  doApply();
+            if (e.key === 'Escape') doCancel();
+        };
+        const cleanup = () => {
+            tagModalOk.removeEventListener('click', doApply);
+            tagModalCancel.removeEventListener('click', doCancel);
+            tagModalSelect.removeEventListener('keydown', onKey);
+        };
+        tagModalOk.addEventListener('click', doApply);
+        tagModalCancel.addEventListener('click', doCancel);
+        tagModalSelect.addEventListener('keydown', onKey);
+    }
+
+    _maybeShowChangelog() {
+        const CURRENT_VERSION = 'v1.1';
+        if (this.appSettings?.last_seen_version !== CURRENT_VERSION) {
+            setTimeout(() => this.elements.changelogModal?.classList.add('show'), 800);
+        }
+    }
+
+    _closeChangelog() {
+        this.elements.changelogModal?.classList.remove('show');
+        if (this.py_channel) this.py_channel.setLastSeenVersion('v1.1');
+    }
+
+    _applySafeMode() {
+        const enabled = this.elements.safeModeCb?.checked ?? false;
+        const maxDb   = parseFloat(this.elements.safeModeMaxSlider?.value ?? 12);
+        if (this.py_channel) this.py_channel.setSafeMode(enabled, maxDb);
+    }
+
+    _resetEQ() {
+        this._pushHistory();
+        this.equalizerPoints.forEach(p => { p.gain = 0; });
+        this.elements.preampSlider.value = 0;
+        this.elements.preampValue.value = 0;
+        this.elements.bassSlider.value = 0;
+        this.elements.bassValue.value = 0;
+        this.elements.trebleSlider.value = 0;
+        this.elements.trebleValue.value = 0;
+
+        if (this.py_channel) {
+            this.py_channel.setPreampGain(0);
+            this.py_channel.setBassGain(0);
+            this.py_channel.setTrebleGain(0);
+            this.equalizerPoints.forEach(p => {
+                this.py_channel.setEqualizerPointParameter(p.index, 'gain', 0);
+            });
+        }
+
+        this.selectedPointIndex = -1;
+        this.hidePointParameters();
+        this.updateCoefficients();
+        this.drawGraph();
+        this.showToast('EQ reset to flat.', 'info', 2000);
+    }
+
+    _autoPreamp() {
+        if (!this.equalizerPoints.length) return;
+
+        // Find the peak gain across the full simulated curve
+        let peakGain = -Infinity;
+        const steps = 500;
+        const logStep = (this.LOG_MAX_FREQ - this.LOG_MIN_FREQ) / steps;
+        for (let i = 0; i <= steps; i++) {
+            const freq = Math.pow(10, this.LOG_MIN_FREQ + i * logStep);
+            // getSimulatedGain already includes current preamp — we want the gain WITHOUT preamp
+            let totalLin = 1.0;
+            for (const coeffs of this.pointCoefficients) {
+                if (coeffs) totalLin *= DSPProcessor.calcFrequencyResponse(coeffs, freq);
+            }
+            if (this.bassCoeffs) totalLin *= DSPProcessor.calcFrequencyResponse(this.bassCoeffs, freq);
+            if (this.trebleCoeffs) totalLin *= DSPProcessor.calcFrequencyResponse(this.trebleCoeffs, freq);
+            const gainDb = DSPProcessor.linearToDb(totalLin);
+            if (gainDb > peakGain) peakGain = gainDb;
+        }
+
+        // Optimal preamp is the negative of the peak
+        const optimal = peakGain > 0 ? -Math.ceil(peakGain * 10) / 10 : 0;
+
+        this._pushHistory();
+        this.elements.preampSlider.value = optimal;
+        this.elements.preampValue.value = optimal;
+        if (this.py_channel) this.py_channel.setPreampGain(optimal);
+        this.updateCoefficients();
+        this.drawGraph();
+        this.showToast(`Auto-preamp: ${optimal.toFixed(1)} dB`, 'success', 2000);
+    }
+
+    setupV11EventListeners() {
+        const {
+            newsBtn, undoBtn, redoBtn, abBtn, exportApoIncludeButton,
+            safeModeCb, safeModeMaxSlider, safeModeMaxValue, safeModeMaxLabel,
+            closeChangelogModal, closeChangelogOk, configListSelect
+        } = this.elements;
+
+        if (newsBtn) newsBtn.addEventListener('click', () => {
+            this.elements.changelogModal?.classList.add('show');
+        });
+
+        if (undoBtn) undoBtn.addEventListener('click', () => this.undo());
+        if (redoBtn) redoBtn.addEventListener('click', () => this.redo());
+
+        if (abBtn) {
+            abBtn.addEventListener('click',    ()  => this._abToggle());
+            abBtn.addEventListener('dblclick', (e) => { e.stopPropagation(); this._abReset(); });
+        }
+
+        if (exportApoIncludeButton) {
+            exportApoIncludeButton.addEventListener('click', () => {
+                if (this.elements.exportDropdown) this.elements.exportDropdown.classList.remove('open');
+                if (this.py_channel) this.py_channel.exportToApoInclude();
+            });
+        }
+
+        // Auto-preamp
+        const { autoPreampBtn } = this.elements;
+        if (autoPreampBtn) autoPreampBtn.addEventListener('click', () => this._autoPreamp());
+
+        if (safeModeCb) safeModeCb.addEventListener('change', () => this._applySafeMode());
+
+        if (safeModeMaxSlider) {
+            safeModeMaxSlider.addEventListener('input', (e) => {
+                const v = parseInt(e.target.value);
+                if (safeModeMaxValue) safeModeMaxValue.value = v;
+                if (safeModeMaxLabel) safeModeMaxLabel.textContent = v;
+                this._applySafeMode();
+            });
+        }
+        if (safeModeMaxValue) {
+            safeModeMaxValue.addEventListener('input', (e) => {
+                const v = parseInt(e.target.value);
+                if (safeModeMaxSlider) safeModeMaxSlider.value = v;
+                if (safeModeMaxLabel) safeModeMaxLabel.textContent = v;
+                this._applySafeMode();
+            });
+        }
+
+        // Rename config button (replaces dblclick which doesn't work on <select>)
+        const { renameConfigBtn } = this.elements;
+        if (renameConfigBtn) {
+            renameConfigBtn.addEventListener('click', () => {
+                const selected = configListSelect.value;
+                if (!selected || selected === 'Default') {
+                    this.showToast("Cannot rename the default configuration.", 'error', 2000);
+                    return;
+                }
+                this._openRenameModal(selected);
+            });
+        }
+
+        // Tag config button — assign a tag to the selected preset
+        const { tagConfigBtn, tagFilterSelect } = this.elements;
+        if (tagConfigBtn) {
+            tagConfigBtn.addEventListener('click', () => {
+                const selected = configListSelect.value;
+                if (!selected || selected === 'Default') {
+                    this.showToast("Cannot tag the default configuration.", 'error', 2000);
+                    return;
+                }
+                this._openTagPicker(selected);
+            });
+        }
+
+        // Tag filter dropdown — re-render the config list whenever it changes
+        if (tagFilterSelect) {
+            tagFilterSelect.addEventListener('change', (e) => {
+                this.activeTagFilter = e.target.value || "";
+                const current = configListSelect.value;
+                this._renderConfigList(current);
+            });
+        }
+
+        // Reset EQ button
+        const { resetEqBtn } = this.elements;
+        if (resetEqBtn) resetEqBtn.addEventListener('click', () => this._resetEQ());
+
+        if (closeChangelogModal) closeChangelogModal.addEventListener('click', () => this._closeChangelog());
+        if (closeChangelogOk)   closeChangelogOk.addEventListener('click',   () => this._closeChangelog());
+    }
+
+    setupKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            const tag = document.activeElement?.tagName;
+            if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+            if (e.ctrlKey && e.key === 'z') { e.preventDefault(); this.undo(); }
+            if (e.ctrlKey && e.key === 'y') { e.preventDefault(); this.redo(); }
+
+            // Arrow keys to nudge selected point
+            if (this.selectedPointIndex !== -1 && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+                const point = this.equalizerPoints.find(p => p.index === this.selectedPointIndex);
+                if (!point) return;
+
+                this._pushHistory();
+                const fine = e.shiftKey;
+
+                if (e.key === 'ArrowUp') {
+                    point.gain = Math.min(this.MAX_GAIN, point.gain + (fine ? 0.1 : 0.5));
+                    point.gain = parseFloat(point.gain.toFixed(1));
+                } else if (e.key === 'ArrowDown') {
+                    point.gain = Math.max(this.MIN_GAIN, point.gain - (fine ? 0.1 : 0.5));
+                    point.gain = parseFloat(point.gain.toFixed(1));
+                } else if (e.key === 'ArrowRight') {
+                    const logFreq = Math.log10(point.freq);
+                    const step = fine ? 0.01 : 0.05;
+                    const newLog = Math.min(this.LOG_MAX_FREQ, logFreq + step);
+                    point.freq = Math.round(Math.pow(10, newLog));
+                } else if (e.key === 'ArrowLeft') {
+                    const logFreq = Math.log10(point.freq);
+                    const step = fine ? 0.01 : 0.05;
+                    const newLog = Math.max(this.LOG_MIN_FREQ, logFreq - step);
+                    point.freq = Math.round(Math.pow(10, newLog));
+                }
+
+                if (this.py_channel) {
+                    this.py_channel.setEqualizerPointParameter(point.index, 'gain', point.gain);
+                    this.py_channel.setEqualizerPointParameter(point.index, 'freq', point.freq);
+                }
+
+                this.showPointParameters(point);
+                this.updateCoefficients();
+                this.drawGraph();
+            }
+        });
     }
 }
 
@@ -1886,5 +2750,3 @@ window.onload = function() {
         setTimeout(window.onload, 50);
     }
 };
-
-

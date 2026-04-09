@@ -147,32 +147,28 @@ class VerificationThread(QThread):
             return None
     
     def get_latest_eqapo_version(self) -> str:
-        """Récupère la dernière version d'Equalizer APO depuis SourceForge"""
+        """Fetch the latest Equalizer APO version from SourceForge.
+
+        Tries the strict EqualizerAPO-x64-X.Y.Z pattern first, then falls back
+        to a permissive pattern so the parser keeps working if SourceForge ever
+        renames their installer.
+        """
         try:
             api_url = "https://sourceforge.net/projects/equalizerapo/best_release.json"
-            
-            with urllib.request.urlopen(api_url, timeout=10) as response:
+            req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
                 data = json.loads(response.read())
-                filename = data['release']['filename']
-                version_match = re.search(r'EqualizerAPO[_-](\d+[._]\d+(?:[._]\d+)?)', filename)
-                if version_match:
-                    return version_match.group(1).replace('_', '.')
-            
+            filename = data.get('release', {}).get('filename', '') or ''
+            m = re.search(r'EqualizerAPO-x64-(\d+\.\d+\.\d+)', filename)
+            if m:
+                return m.group(1)
+            m = re.search(r'EqualizerAPO[_-](\d+[._]\d+(?:[._]\d+)?)', filename)
+            if m:
+                return m.group(1).replace('_', '.')
             return None
         except Exception as e:
-            print(f"Error getting latest version: {e}")
+            print(f"Error getting latest EqualizerAPO version: {e}")
             return None
-    
-
-    def get_latest_eqapo_version(self) -> str:
-        api_url = "https://sourceforge.net/projects/equalizerapo/best_release.json"
-        with urllib.request.urlopen(api_url, timeout=10) as response:
-            data = json.loads(response.read())
-        filename = data['release']['filename'] 
-        version_match = re.search(r'EqualizerAPO-x64-(\d+\.\d+\.\d+)', filename)
-        if version_match:
-            return version_match.group(1)
-        return None
 
     def install_equalizer_apo(self) -> bool:
         """Télécharge et installe Equalizer APO"""
@@ -244,21 +240,33 @@ class VerificationThread(QThread):
             self.task_progress_update.emit(0, 100)
             return False
 
+    # Map pip package name -> import name when they differ.
+    _LIB_IMPORT_OVERRIDES = {
+        'PyQt6': 'PyQt6',
+        'sounddevice': 'sounddevice',
+        'pypresence': 'pypresence',
+    }
+
     def check_libraries(self) -> List[str]:
         missing = []
         for lib in self.required_libs:
+            import_name = self._LIB_IMPORT_OVERRIDES.get(lib, lib.replace('-', '_'))
             try:
-                __import__(lib.replace('-', '_'))
+                __import__(import_name)
             except ImportError:
                 missing.append(lib)
         return missing
-    
+
     def install_libraries(self, libraries: List[str]) -> bool:
         try:
             for lib in libraries:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", lib])
+                self.progress_update.emit(f"Installing {lib}...", 15)
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", lib]
+                )
             return True
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"Library install failed: {e}")
             return False
     
     def check_autoeq_directories(self) -> bool:
@@ -634,9 +642,10 @@ class VerificationDialog(QDialog):
         if success:
             self.status_label.setText("✓ Verification complete!")
             self.details_text.append(f"\n✓ SUCCESS: {message}")
-            #self.close_button.setEnabled(True)
-            time.sleep(2)
-            self.accept()
+            # Use a non-blocking timer instead of time.sleep so the dialog
+            # remains responsive while showing the success message.
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(1500, self.accept)
         else:
             self.status_label.setText("✗ Verification failed")
             self.details_text.append(f"\n✗ ERROR: {message}")

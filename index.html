@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AudioEZ - V1</title>
+    <title>AudioEZ - V1.1</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 
@@ -21,11 +21,19 @@
                 <h1 class="app-title">AudioEZ</h1>
             </div>
 
-            <div class="status-panel">
-                <span id="config-status-label" class="status-label">Config: Default</span>
-                <div id="status-message" class="status-message">Initializing...</div>
+            <div class="header-actions">
+                <button id="news-btn" class="btn btn-secondary btn-news" title="What's new">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/>
+                        <path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8z"/>
+                    </svg>
+                    <span>News</span>
+                </button>
             </div>
         </header>
+
+        <!-- Toast container -->
+        <div id="toast-container"></div>
 
         <main class="main-content">
             <div class="main-column">
@@ -53,84 +61,115 @@
 
                 <div class="graph-container">
                     <canvas id="eq-graph"></canvas>
+                    <div id="graph-tooltip" class="graph-tooltip"></div>
                 </div>
             
 
-                <div class="controls-group">
-                    <div class="dual-selects-wrapper" style="max-height: 75px;">
-                        <div class="select-group">
-                            <label for="config-list-select" class="control-label">Configuration:</label>
-                            <div class="select-wrapper">
-                                <select id="config-list-select"></select>
-                            </div>
+                <div class="controls-group config-toolbar-group">
+                    <!-- Config selector row -->
+                    <div class="config-select-row">
+                        <label for="config-list-select" class="control-label config-label">Configuration:</label>
+                        <div class="select-wrapper config-select-wrapper">
+                            <select id="config-list-select"></select>
                         </div>
-                        
-                        <!-- <button id="graphic-parameters-button" class="btn btn-secondary" style="max-height: 35px; min-width: 200px; margin-top: 19px; display: flex; align-items: center; justify-content: center;">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12">
-                            </svg>
-                            <span style="margin-left: 5px;">Graphic Parameters</span>
-                        </button> -->
-
-                        <!-- Feature soon -->
+                        <button id="rename-config-btn" class="btn btn-icon btn-toolbar-icon" title="Rename preset">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                        </button>
+                        <button id="tag-config-btn" class="btn btn-icon btn-toolbar-icon" title="Tag this preset">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
+                        </button>
+                        <div class="select-wrapper" style="max-width:90px;">
+                            <select id="tag-filter-select" title="Filter presets by tag">
+                                <option value="">All</option>
+                                <option value="IEM">IEM</option>
+                                <option value="Over-ear">Over-ear</option>
+                                <option value="Gaming">Gaming</option>
+                                <option value="Music">Music</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="config-actions">
-                        <div class="controls-buttons-row">
+
+                    <!-- Button toolbar — single row, semantic groups -->
+                    <div class="config-toolbar">
+
+                        <!-- Group 1: History -->
+                        <div class="btn-group-segment">
+                            <button id="undo-btn" class="btn btn-icon" title="Undo (Ctrl+Z)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                                <span>Undo</span>
+                            </button>
+                            <button id="redo-btn" class="btn btn-icon" title="Redo (Ctrl+Y)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>
+                                <span>Redo</span>
+                            </button>
+                        </div>
+
+                        <div class="toolbar-divider"></div>
+
+                        <!-- Group 2: A/B Compare -->
+                        <div class="btn-group-segment">
+                            <button id="ab-btn" class="btn btn-icon" title="A/B Compare — double-click to reset">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="9" height="18" rx="2"/><rect x="13" y="3" width="9" height="18" rx="2"/></svg>
+                                <span id="ab-btn-label">A/B</span>
+                            </button>
+                            <button id="reset-eq-btn" class="btn btn-icon" title="Reset EQ to flat">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                                <span>Reset</span>
+                            </button>
+                        </div>
+
+                        <div class="toolbar-divider"></div>
+
+                        <!-- Group 3: Import / Save / Export -->
+                        <div class="btn-group-segment">
+                            <button id="import-config-button" class="btn btn-secondary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                <span>Import</span>
+                            </button>
                             <button id="save-config-button" class="btn btn-primary">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                                    <polyline points="17 21 17 13 7 13 7 21"/>
-                                    <polyline points="7 3 7 8 15 8"/>
-                                </svg>
-                                
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                                 <span>Save</span>
                             </button>
                         </div>
-                        <div class="controls-buttons-row">
+
+                        <div class="btn-group-segment export-dropdown-wrap">
+                            <button id="export-config-button" class="btn btn-secondary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                <span>Export</span>
+                            </button>
+                            <div class="export-more-wrap">
+                                <button id="export-more-btn" class="btn btn-secondary btn-more" title="More export options">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                                </button>
+                                <div id="export-dropdown" class="export-dropdown">
+                                    <button id="export-all-configs-button" class="dropdown-item">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="M12 3l7 7m-7-7L5 10"/><path d="M19 19H5a2 2 0 0 1-2-2v-3h18v3a2 2 0 0 1-2 2z"/></svg>
+                                        Export all presets
+                                    </button>
+                                    <button id="export-apo-include-button" class="dropdown-item">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="M12 3l7 7m-7-7L5 10"/><rect x="2" y="17" width="20" height="5" rx="1"/></svg>
+                                        APO Include file
+                                    </button>
+                                    <div class="dropdown-separator"></div>
+                                    <button id="export-png-button" class="dropdown-item">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                        Save graph as PNG
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="toolbar-divider"></div>
+
+                        <!-- Group 4: Delete (isolated) -->
+                        <div class="btn-group-segment">
                             <button id="delete-config-button" class="btn btn-danger">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2">
-                                    <polyline points="3 6 5 6 21 6"></polyline>
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                    <line x1="10" y1="11" x2="10" y2="17"></line>
-                                    <line x1="14" y1="11" x2="14" y2="17"></line>
-                                </svg>
-                                
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                 <span>Delete</span>
                             </button>
                         </div>
-                        <div class="controls-buttons-row">
-                            <button id="import-config-button" class="btn btn-secondary">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                    <polyline points="7 10 12 15 17 10"/>
-                                    <line x1="12" y1="15" x2="12" y2="3"/>
-                                </svg>
-                                
-                                <span>Import</span>
-                            </button>
-                        </div>
-                        <div class="controls-buttons-row">
-                            <button id="export-config-button" class="btn btn-secondary">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                    <polyline points="17 8 12 3 7 8"/>
-                                    <line x1="12" y1="3" x2="12" y2="15"/>
-                                </svg>
-                                
-                                <span>Export</span>
-                            </button>
-                            </div>
-                        <div class="controls-buttons-row">
-                            <button id="export-all-configs-button" class="btn btn-secondary">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M12 17V3"/>
-                                    <path d="M12 3l7 7m-7-7L5 10"/>
-                                    <path d="M19 19H5a2 2 0 0 1-2-2v-3h18v3a2 2 0 0 1-2 2z"/>
-                                </svg>
-                                
-                                <span>Export all</span>
-                            </button>
-                        </div>
+
                     </div>
                 </div>
             </div>
@@ -155,10 +194,15 @@
 
                 <div class="controls-group">
                     <div class="box-controls-group">
-                        <label for="preamp-slider" class="control-label">Pre-amp :</label>
+                        <div class="preamp-horizontal-wrapper" style="justify-content: space-between;">
+                            <label for="preamp-slider" class="control-label">Pre-amp :</label>
+                            <button id="auto-preamp-btn" class="btn btn-toolbar-icon" title="Auto-preamp: set optimal preamp to avoid clipping" style="padding:2px 6px; font-size:10px;">
+                                Auto
+                            </button>
+                        </div>
                         <div class="preamp-horizontal-wrapper">
                             <input type="range" id="preamp-slider" min="-15" max="15" value="0" step="0.1">
-                            
+
                             <div class="input-wrapper">
                                 <input type="number" id="preamp-value" step="0.1" value="0.0">
                                 <span class="unit">dB</span>
@@ -304,10 +348,21 @@
 
                             <div id="graphic-options" class="modal-export-option">
                                 <label for="bands-select" class="modal-export-label">Number of bands:</label>
-                                
+
                                 <div class="input-wrapper">
                                     <input type="number" id="export-point-bands-value" step="5" value="10" min="5" max="31">
                                     <span class="unit">Bands</span>
+                                </div>
+                            </div>
+
+                            <div id="parametric-bands-option" class="modal-export-option">
+                                <label for="export-target-bands" class="modal-export-label">Export band count:</label>
+                                <div class="preamp-horizontal-wrapper">
+                                    <div class="input-wrapper">
+                                        <input type="number" id="export-target-bands" step="1" value="0" min="0" max="31">
+                                        <span class="unit">Bands</span>
+                                    </div>
+                                    <span class="modal-export-label" style="font-size:11px; opacity:0.7;">0 = keep current</span>
                                 </div>
                             </div>
 
@@ -326,19 +381,15 @@
                             </div>
                         </div>
 
-                        <div id="Warning-message">
-                            
-                            
+                        <div id="Warning-message" style="display:none;">
                             <div class="controls-group-warning">
-                                <label class="modal-export-label">⚠ Warning: x</label>
+                                <label class="modal-export-label"></label>
                             </div>
                         </div>
 
-                        <div id="Success-message">
-                            
-                            
+                        <div id="Success-message" style="display:none;">
                             <div class="controls-group-success">
-                                <label class="modal-export-label">⚠ Warning: x</label>
+                                <label class="modal-export-label"></label>
                             </div>
                         </div>
 
@@ -447,8 +498,73 @@
                                     </label>
                                 </div>
                                 <p class="modal-option-description">
-                                    Automatically detects sound output and applies optimized EQ curves using AI. 
+                                    Automatically detects sound output and applies optimized EQ curves using AI.
                                 </p>
+
+                                <!-- Live status pill (visible while enabled) -->
+                                <div id="adaptive-status-row" class="adaptive-status-row" style="display:none;">
+                                    <span class="adaptive-status-dot" id="adaptive-status-dot"></span>
+                                    <span class="adaptive-status-text" id="adaptive-status-text">Idle</span>
+                                    <span class="adaptive-status-profile" id="adaptive-status-profile"></span>
+                                </div>
+
+                                <!-- Advanced parameters (collapsible) -->
+                                <div id="adaptive-advanced" class="adaptive-advanced" style="display:none;">
+                                    <button type="button" id="adaptive-advanced-toggle" class="adaptive-advanced-toggle">
+                                        Advanced parameters ▾
+                                    </button>
+                                    <div id="adaptive-advanced-body" class="adaptive-advanced-body" style="display:none;">
+
+                                        <div class="adaptive-param">
+                                            <label for="adaptive-speech-threshold">
+                                                Speech sensitivity <span class="adaptive-param-value" id="adaptive-speech-threshold-val">0.60</span>
+                                            </label>
+                                            <input type="range" id="adaptive-speech-threshold" min="0.2" max="0.95" step="0.05" value="0.6">
+                                        </div>
+
+                                        <div class="adaptive-param">
+                                            <label for="adaptive-music-threshold">
+                                                Music genre sensitivity <span class="adaptive-param-value" id="adaptive-music-threshold-val">0.40</span>
+                                            </label>
+                                            <input type="range" id="adaptive-music-threshold" min="0.1" max="0.9" step="0.05" value="0.4">
+                                        </div>
+
+                                        <div class="adaptive-param">
+                                            <label for="adaptive-hysteresis">
+                                                Stability delay <span class="adaptive-param-value" id="adaptive-hysteresis-val">8.0s</span>
+                                            </label>
+                                            <input type="range" id="adaptive-hysteresis" min="2" max="30" step="0.5" value="8">
+                                        </div>
+
+                                        <div class="adaptive-param">
+                                            <label for="adaptive-cooldown">
+                                                Cooldown between switches <span class="adaptive-param-value" id="adaptive-cooldown-val">12.0s</span>
+                                            </label>
+                                            <input type="range" id="adaptive-cooldown" min="2" max="60" step="0.5" value="12">
+                                        </div>
+
+                                        <div class="adaptive-param">
+                                            <label for="adaptive-transition">
+                                                Transition duration <span class="adaptive-param-value" id="adaptive-transition-val">1.5s</span>
+                                            </label>
+                                            <input type="range" id="adaptive-transition" min="0.2" max="5" step="0.1" value="1.5">
+                                        </div>
+
+                                        <div class="adaptive-param adaptive-param-toggle">
+                                            <label for="adaptive-manual-override">Pause when I touch the EQ</label>
+                                            <label class="switch">
+                                                <input type="checkbox" id="adaptive-manual-override" checked>
+                                                <span class="slider round"></span>
+                                            </label>
+                                        </div>
+
+                                        <div class="adaptive-param">
+                                            <label>Active profiles</label>
+                                            <div class="adaptive-profile-grid" id="adaptive-profile-grid"></div>
+                                        </div>
+
+                                    </div>
+                                </div>
                             </div>
 
                             <hr>
@@ -500,14 +616,155 @@
                                 <select id="default-configuration-select" class="custom-select">
                                 </select>
                             </div>
+
+                            <hr>
+
+                            <div class="modal-option-group">
+                                <div class="modal-option">
+                                    <label for="safe-mode-checkbox">Safe Mode</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="safe-mode-checkbox">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <p class="modal-option-description">Limits gain on all bands to ±<span id="safe-mode-max-label">12</span> dB to protect your hearing and equipment.</p>
+                                <div class="preamp-horizontal-wrapper" style="margin-top:6px;">
+                                    <input type="range" id="safe-mode-max-slider" min="3" max="20" value="12" step="1">
+                                    <div class="input-wrapper">
+                                        <input type="number" id="safe-mode-max-value" value="12" min="3" max="20" step="1">
+                                        <span class="unit">dB</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div class="modal-footer">
-                            <button id="save-parameters-btn" class="btn btn-primary">Save</button>
+                            <span class="modal-autosave-notice">Settings are saved automatically</span>
                         </div>
                     </div>
                 </div>
             </aside>
         </main>
+    </div>
+
+    <!-- Changelog modal -->
+    <div id="changelog-modal" class="modal-overlay">
+        <div class="modal-content modal-changelog">
+            <div class="modal-header">
+                <h2>What's new in V1.1 🎉</h2>
+                <button id="close-changelog-modal" class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body changelog-body">
+
+                <div class="changelog-section changelog-hero">
+                    <p class="changelog-intro">AudioEZ v1.1 is here — the biggest update yet. New smart features, a cleaner interface, and a ton of fixes under the hood. Here's everything that's new 👇</p>
+                </div>
+
+                <div class="changelog-section">
+                    <h3>✨ New features</h3>
+                    <ul>
+                        <li><strong>Auto-Preamp</strong> — Hit "Auto" next to the preamp slider and AudioEZ figures out the ideal negative preamp for you based on your current EQ. No more clipping.</li>
+                        <li><strong>Arrow key control on the graph</strong> — Select a point, then use ↑↓ to adjust gain by 0.5 dB and ←→ to move its frequency. Hold Shift for finer 0.1 dB / 0.01-step moves.</li>
+                        <li><strong>Hover tooltip on the curve</strong> — Move your mouse over the EQ graph and you'll see the exact frequency and gain at your cursor — no need to click.</li>
+                        <li><strong>Wavelet import</strong> — You could already export to Wavelet (.json) format. Now you can import those files too.</li>
+                        <li><strong>Preset tags &amp; filtering</strong> — Tag any preset (IEM, Over-ear, Gaming, Music, Custom…) and filter the preset list by tag. Rename button also added next to the list.</li>
+                        <li><strong>Band count conversion on export</strong> — Export a 10-band EQ as 5 bands (or any other count). AudioEZ resamples the curve automatically.</li>
+                        <li><strong>Undo / Redo</strong> — Up to 50 steps. Ctrl+Z / Ctrl+Y or the toolbar buttons.</li>
+                        <li><strong>A/B Compare</strong> — Freeze a reference snapshot and switch between it and your live EQ on the fly.</li>
+                        <li><strong>Reset EQ</strong> — One button to flatten everything back to zero.</li>
+                        <li><strong>Scroll wheel on graph</strong> — Hover a band point and scroll to adjust gain. Shift = fine mode.</li>
+                        <li><strong>Export to APO Include</strong> — Writes directly to the EQ APO config folder without touching your other plugins.</li>
+                        <li><strong>System Tray</strong> — AudioEZ stays in your tray. Toggle the EQ or reopen the window without keeping it on your taskbar.</li>
+                    </ul>
+                </div>
+
+                <div class="changelog-section">
+                    <h3>🧠 Adaptive Filter improvements (Experimental)</h3>
+                    <ul>
+                        <li><strong>Live detection badge</strong> — See what AudioEZ is currently hearing (genre, confidence %) right in the settings panel while Adaptive is on.</li>
+                        <li><strong>Advanced parameters</strong> — Tune speech sensitivity, music sensitivity, how long a genre needs to stay detected before switching, cooldown between switches, and transition speed — all from the UI, no restart needed.</li>
+                        <li><strong>Profile selector</strong> — Enable or disable specific profiles (Speech, Rock, Jazz, etc.) so the filter only switches to genres you care about.</li>
+                        <li><strong>Manual override</strong> — Touch any EQ slider while Adaptive is running and it pauses automatically, then resumes on its own after a timeout.</li>
+                        <li><strong>Much smoother transitions</strong> — Config file writes are now throttled during transitions instead of spamming your disk 50 times per second.</li>
+                        <li><strong>Better crash protection</strong> — Thread-safe shutdown, safe recorder teardown, and robust restore of your original EQ when you turn Adaptive off.</li>
+                    </ul>
+                </div>
+
+                <div class="changelog-section">
+                    <h3>⚡ Performance</h3>
+                    <ul>
+                        <li>APO config file writes debounced to max ~80 ms — no more hammering disk on every pixel dragged.</li>
+                        <li>EQ curve is only recalculated when a parameter actually changed (hash-based cache).</li>
+                        <li>Startup verification dialog no longer freezes the UI with a blocking sleep — uses a proper timer now.</li>
+                    </ul>
+                </div>
+
+                <div class="changelog-section">
+                    <h3>🎨 UI polish</h3>
+                    <ul>
+                        <li>Toolbar regrouped logically — Undo/Redo | A/B + Reset | Import / Save / Export | Delete (now isolated so you can't accidentally hit it).</li>
+                        <li>Rename preset moved to a dedicated pencil button (double-click on the dropdown doesn't work in Qt — now fixed).</li>
+                        <li>Dropdown highlights no longer stay blue after hovering.</li>
+                        <li>Toggle switches in the Parameters modal now animate correctly.</li>
+                        <li>Shimmer animation on the Experimental badge actually works.</li>
+                        <li>Safe Mode — caps every band and preamp to a configurable limit (default ±12 dB).</li>
+                    </ul>
+                </div>
+
+                <div class="changelog-section">
+                    <h3>🐛 Bug fixes</h3>
+                    <ul>
+                        <li>Fixed crash on file import (<code>NameError: bands</code>).</li>
+                        <li>Fixed export crash with <code>QFileDialog</code> (PyQt6 enum change).</li>
+                        <li>Fixed <code>set_q_factor</code> applying to the wrong object.</li>
+                        <li>Fixed Adaptive Filter crash when the RTGD module isn't installed.</li>
+                        <li>Fixed export modal showing "Warning: x" placeholder on open.</li>
+                        <li>Fixed close button for Parameters modal accidentally closing Export modal.</li>
+                        <li>Fixed <code>backup_config</code> / <code>restore_config</code> calling a method that didn't exist.</li>
+                        <li>Fixed hardcoded 10-band limit in several places — AudioEZ now works with any band count.</li>
+                        <li>Fixed duplicate version-check function in startup (second one was crashing silently on network errors).</li>
+                        <li>Fixed Discord RPC default inconsistency.</li>
+                        <li>Preset rename and delete now also clean up associated tags.</li>
+                    </ul>
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <button id="close-changelog-ok" class="btn btn-primary">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename preset modal -->
+    <div id="rename-modal" class="modal-confirm">
+        <div class="modal-confirm-content">
+            <p class="modal-confirm-message">Rename preset:</p>
+            <input type="text" id="rename-input" class="modal-export-input" style="margin:10px 0;width:100%;">
+            <div class="modal-confirm-buttons">
+                <button id="rename-modal-ok" class="btn btn-primary">Rename</button>
+                <button id="rename-modal-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tag preset modal -->
+    <div id="tag-modal" class="modal-confirm">
+        <div class="modal-confirm-content">
+            <p class="modal-confirm-message" id="tag-modal-title">Tag preset:</p>
+            <div class="select-wrapper" style="margin:10px 0;width:100%;">
+                <select id="tag-modal-select">
+                    <option value="">— None —</option>
+                    <option value="IEM">IEM</option>
+                    <option value="Over-ear">Over-ear</option>
+                    <option value="Gaming">Gaming</option>
+                    <option value="Music">Music</option>
+                    <option value="Custom">Custom</option>
+                </select>
+            </div>
+            <div class="modal-confirm-buttons">
+                <button id="tag-modal-ok" class="btn btn-primary">Apply</button>
+                <button id="tag-modal-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
