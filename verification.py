@@ -3,12 +3,19 @@ from PyQt6.QtWidgets import QProgressBar, QTextEdit, QDialog, QVBoxLayout, QLabe
 from PyQt6.QtCore import pyqtSignal, QThread, Qt
 from PyQt6.QtGui import QFont
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 class VerificationThread(QThread):
     progress_update = pyqtSignal(str, int)
     verification_complete = pyqtSignal(bool, str)
     task_progress_update = pyqtSignal(int, int)
+
+    AUDIO_RENDER_ROOT = r"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render"
+    AUDIO_ENDPOINT_NAME_VALUE = "{a45c254e-df1c-4efd-8020-67d146a850e0},2"
+    AUDIO_INTERFACE_NAME_VALUE = "{b3f8fa53-0004-438e-9003-51a46e139bfc},6"
+    FX_PROPERTIES_NAME = "{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},5"
+    FX_BACKUP_NAME = "{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},6"
+    EQAPO_PRE_MIX_CLSID = "{EACD2258-FCAC-4FF4-B36D-419E924A6D79}"
     
     def __init__(self):
         super().__init__()
@@ -19,6 +26,9 @@ class VerificationThread(QThread):
 
         self.autoeq_repo = "https://github.com/jaakkopasanen/AutoEq"
         self.audioez_repo = "https://github.com/PainDe0Mie/AudioEZ"
+        self.state_dir = Path(os.environ.get('ProgramData', r'C:\ProgramData')) / "AudioEZ"
+        self.audio_output_snapshot_path = self.state_dir / "audio_output_snapshot.json"
+        self.audio_output_backup_path = self.state_dir / "audio_output_backups.json"
         self.required_libs = [
             'PyQt6', 'numpy', 'scipy', 'sounddevice', 'pypresence',
             'requests', 'autoeq'
@@ -47,7 +57,11 @@ class VerificationThread(QThread):
                     self.progress_update.emit(f"Updating Equalizer APO to {latest_version}...", 25)
                     self.install_equalizer_apo()
 
-            self.progress_update.emit("Checking AutoEQ directories...", 30)
+            self.progress_update.emit("Checking audio outputs...", 30)
+            baseline_created, new_outputs, configured_outputs, failed_outputs = self.sync_audio_output_installations()
+            self.task_progress_update.emit(0, 0)
+
+            self.progress_update.emit("Checking AutoEQ directories...", 35)
             if not self.check_autoeq_directories():
                 self.progress_update.emit("Downloading AutoEQ data...", 40)
                 if not self.download_autoeq_data():
@@ -70,11 +84,253 @@ class VerificationThread(QThread):
             message = "All checks passed successfully!"
             if update_available:
                 message += f"\n\nNew version available: {latest_version}\nPlease visit {self.audioez_repo} to update."
+            if baseline_created:
+                message += "\n\nAudio output baseline saved. New outputs will be auto-configured on the next launch."
+            elif new_outputs:
+                message += f"\n\nNew audio outputs detected: {', '.join(new_outputs)}"
+                if configured_outputs:
+                    message += f"\nEqualizer APO enabled automatically for: {', '.join(configured_outputs)}"
+                if failed_outputs:
+                    message += (
+                        f"\nCould not enable Equalizer APO automatically for: {', '.join(failed_outputs)}"
+                        "\nRun AudioEZ as administrator, then restart the audio device or Windows if the effect is not active yet."
+                    )
             
             self.verification_complete.emit(True, message)
             
         except Exception as e:
             self.verification_complete.emit(False, f"Verification error: {str(e)}")
+
+    def _safe_query_value(self, key: winreg.HKEYType, value_name: str):
+        try:
+            value, _ = winreg.QueryValueEx(key, value_name)
+            return value
+        except (FileNotFoundError, OSError):
+            return None
+
+    def _normalize_guid(self, value: Optional[str]) -> str:
+        return str(value or "").strip().upper()
+
+    def _is_present_audio_state(self, state: Optional[int]) -> bool:
+        if not isinstance(state, int):
+            return True
+        return not bool(state & 0x4)
+
+    def _format_audio_output_name(self, endpoint_name: Optional[str], interface_name: Optional[str]) -> str:
+        endpoint_name = (endpoint_name or "").strip()
+        interface_name = (interface_name or "").strip()
+        if endpoint_name and interface_name and endpoint_name.lower() != interface_name.lower():
+            return f"{endpoint_name} ({interface_name})"
+        return endpoint_name or interface_name or "Unknown output"
+
+    def get_audio_output_devices(self) -> List[Dict[str, object]]:
+        devices: List[Dict[str, object]] = []
+
+        try:
+            root_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, self.AUDIO_RENDER_ROOT, 0, winreg.KEY_READ)
+        except (FileNotFoundError, OSError) as e:
+            print(f"Error enumerating audio outputs: {e}")
+            return devices
+
+        try:
+            subkey_count, _, _ = winreg.QueryInfoKey(root_key)
+            for index in range(subkey_count):
+                try:
+                    device_id = winreg.EnumKey(root_key, index)
+                except OSError:
+                    continue
+
+                device_path = f"{self.AUDIO_RENDER_ROOT}\\{device_id}"
+                properties_path = f"{device_path}\\Properties"
+
+                try:
+                    device_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, device_path, 0, winreg.KEY_READ)
+                    properties_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, properties_path, 0, winreg.KEY_READ)
+                except (FileNotFoundError, OSError):
+                    continue
+
+                try:
+                    state = self._safe_query_value(device_key, "DeviceState")
+                    endpoint_name = self._safe_query_value(properties_key, self.AUDIO_ENDPOINT_NAME_VALUE)
+                    interface_name = self._safe_query_value(properties_key, self.AUDIO_INTERFACE_NAME_VALUE)
+
+                    if not self._is_present_audio_state(state):
+                        continue
+                    if not endpoint_name and not interface_name:
+                        continue
+
+                    devices.append({
+                        "id": device_id,
+                        "name": self._format_audio_output_name(endpoint_name, interface_name),
+                        "endpoint_name": endpoint_name or "",
+                        "interface_name": interface_name or "",
+                        "state": int(state) if isinstance(state, int) else 0,
+                        "eqapo_enabled": self.is_eqapo_enabled_for_device(device_id),
+                    })
+                finally:
+                    winreg.CloseKey(properties_key)
+                    winreg.CloseKey(device_key)
+        finally:
+            winreg.CloseKey(root_key)
+
+        return sorted(devices, key=lambda item: str(item["name"]).lower())
+
+    def load_audio_output_snapshot(self) -> Optional[Dict[str, Dict[str, object]]]:
+        if not self.audio_output_snapshot_path.exists():
+            return None
+
+        try:
+            with open(self.audio_output_snapshot_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            devices = data.get("devices", {})
+            if isinstance(devices, dict):
+                return devices
+        except Exception as e:
+            print(f"Error loading audio output snapshot: {e}")
+        return None
+
+    def save_audio_output_snapshot(self, devices: List[Dict[str, object]]) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "updated_at": int(time.time()),
+            "devices": {str(device["id"]): device for device in devices},
+        }
+        with open(self.audio_output_snapshot_path, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+
+    def _load_audio_output_backups(self) -> Dict[str, object]:
+        if not self.audio_output_backup_path.exists():
+            return {"devices": {}}
+
+        try:
+            with open(self.audio_output_backup_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                data.setdefault("devices", {})
+                return data
+        except Exception as e:
+            print(f"Error loading audio output backups: {e}")
+        return {"devices": {}}
+
+    def _save_audio_output_backups(self, data: Dict[str, object]) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.audio_output_backup_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def backup_audio_output_fx_properties(self, device: Dict[str, object], fx_value, backup_fx_value) -> None:
+        backups = self._load_audio_output_backups()
+        devices = backups.setdefault("devices", {})
+
+        device_id = str(device["id"])
+        if device_id in devices:
+            return
+
+        devices[device_id] = {
+            "name": device.get("name", device_id),
+            "endpoint_name": device.get("endpoint_name", ""),
+            "interface_name": device.get("interface_name", ""),
+            "original_fx_property": fx_value,
+            "original_backup_fx_property": backup_fx_value,
+            "saved_at": int(time.time()),
+        }
+        backups["updated_at"] = int(time.time())
+        self._save_audio_output_backups(backups)
+
+    def is_eqapo_enabled_for_device(self, device_id: str) -> bool:
+        fx_path = f"{self.AUDIO_RENDER_ROOT}\\{device_id}\\FxProperties"
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, fx_path, 0, winreg.KEY_READ)
+        except (FileNotFoundError, OSError):
+            return False
+
+        try:
+            current_fx = self._safe_query_value(key, self.FX_PROPERTIES_NAME)
+            return self._normalize_guid(current_fx) == self._normalize_guid(self.EQAPO_PRE_MIX_CLSID)
+        finally:
+            winreg.CloseKey(key)
+
+    def enable_eqapo_for_device(self, device: Dict[str, object]) -> bool:
+        device_id = str(device["id"])
+        fx_path = f"{self.AUDIO_RENDER_ROOT}\\{device_id}\\FxProperties"
+
+        try:
+            key = winreg.CreateKeyEx(
+                winreg.HKEY_LOCAL_MACHINE,
+                fx_path,
+                0,
+                winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE
+            )
+        except PermissionError as e:
+            print(f"Permission denied while enabling Equalizer APO for {device.get('name', device_id)}: {e}")
+            return False
+        except OSError as e:
+            print(f"Error opening FX properties for {device.get('name', device_id)}: {e}")
+            return False
+
+        try:
+            current_fx = self._safe_query_value(key, self.FX_PROPERTIES_NAME)
+            backup_fx = self._safe_query_value(key, self.FX_BACKUP_NAME)
+
+            if self._normalize_guid(current_fx) == self._normalize_guid(self.EQAPO_PRE_MIX_CLSID):
+                return True
+
+            self.backup_audio_output_fx_properties(device, current_fx, backup_fx)
+            winreg.SetValueEx(key, self.FX_PROPERTIES_NAME, 0, winreg.REG_SZ, self.EQAPO_PRE_MIX_CLSID)
+        except PermissionError as e:
+            print(f"Permission denied while writing FX properties for {device.get('name', device_id)}: {e}")
+            return False
+        except OSError as e:
+            print(f"Error writing FX properties for {device.get('name', device_id)}: {e}")
+            return False
+        finally:
+            winreg.CloseKey(key)
+
+        return self.is_eqapo_enabled_for_device(device_id)
+
+    def sync_audio_output_installations(self) -> Tuple[bool, List[str], List[str], List[str]]:
+        current_devices = self.get_audio_output_devices()
+        previous_devices = self.load_audio_output_snapshot()
+
+        if previous_devices is None:
+            self.save_audio_output_snapshot(current_devices)
+            return True, [], [], []
+
+        previous_ids = set(previous_devices.keys())
+        new_devices = [device for device in current_devices if str(device["id"]) not in previous_ids]
+        new_output_names = [str(device["name"]) for device in new_devices]
+        configured_outputs: List[str] = []
+        failed_outputs: List[str] = []
+
+        if not new_devices:
+            self.save_audio_output_snapshot(current_devices)
+            return False, new_output_names, configured_outputs, failed_outputs
+
+        total_devices = len(new_devices)
+        persisted_new_ids = set()
+        for index, device in enumerate(new_devices, start=1):
+            device_name = str(device["name"])
+            self.progress_update.emit(f"New audio output detected: {device_name}", 30)
+            self.task_progress_update.emit(index, total_devices)
+
+            if device.get("eqapo_enabled"):
+                persisted_new_ids.add(str(device["id"]))
+                continue
+
+            self.progress_update.emit(f"Enabling Equalizer APO for {device_name}...", 32)
+            if self.enable_eqapo_for_device(device):
+                device["eqapo_enabled"] = True
+                persisted_new_ids.add(str(device["id"]))
+                configured_outputs.append(device_name)
+            else:
+                failed_outputs.append(device_name)
+
+        devices_to_persist = [
+            device for device in current_devices
+            if str(device["id"]) in previous_ids or str(device["id"]) in persisted_new_ids
+        ]
+        self.save_audio_output_snapshot(devices_to_persist)
+
+        return False, new_output_names, configured_outputs, failed_outputs
 
     def check_equalizer_apo(self) -> bool:
         try:
@@ -184,7 +440,8 @@ class VerificationThread(QThread):
             temp_dir = Path(os.environ['TEMP']) / "AudioEZ_Setup"
             temp_dir.mkdir(exist_ok=True)
 
-            installer_path = Path(os.environ['ProgramData']) / "AudioEZ" / f"EqualizerAPO-x64-{version}.exe"
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+            installer_path = self.state_dir / f"EqualizerAPO-x64-{version}.exe"
             installer_path.parent.mkdir(parents=True, exist_ok=True)
             
             req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
